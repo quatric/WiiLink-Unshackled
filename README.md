@@ -6,6 +6,9 @@ Adds Classic Controller and GameCube controller support to WiiLink's USA channel
 |---|---|---|
 | Forecast Channel | HAFE | 1,926,048 bytes |
 | News Channel | HAGE | 2,019,232 bytes |
+| Everybody Votes Channel | HAJE | 2,653,152 bytes |
+| Check Mii Out Channel | HAPE | 3,410,240 bytes |
+| Nintendo Channel | HATE | 3,988,896 bytes |
 
 ```
 python3 build.py wad "<channel> (USA) (WiiLink).wad" out.wad [--clock]
@@ -49,7 +52,7 @@ Five hooks branch out of KPAD/WPAD:
 | BUTTONS | KPAD button compose | ORs Classic Controller buttons into the Wii Remote buttons. |
 | MOTION | After each sample is copied out | Writes the stick pointer and twist into the caller's copy only, so KPAD's IR tracking state is never touched. |
 
-The code (and 0x100 bytes of state) takes the first 0x1000 bytes of the OS arena. That's `__ArenaLo`, right above the debugger stack. OSInit's two arena constants move up past it, so the game never allocates over it.
+The code (and 0x100 bytes of state) takes the first 0x1000 bytes of the OS arena (0x2000 in the Nintendo Channel). That's `__ArenaLo`, right above the debugger stack. OSInit's arena constants move up past it, so the game never allocates over it.
 
 ### The boot loader packs sections
 
@@ -57,12 +60,20 @@ WiiLink's NAND boot program (content `0xb`) ignores DOL file offsets. It streams
 
 The hook section therefore takes the last slot (data 17), and its bytes start exactly where the previous section ends. If a section is aligned or out of order, it loads another section's bytes, and OSInit crashes.
 
+### Two SDK versions
+
+Forecast, News, Everybody Votes and Check Mii Out share the June 2007 SDK. The Nintendo Channel uses a 2009 KPAD, built with `-DSDK2009`:
+
+* **Sample ring:** 16 inline slots at `k+0x13C` plus an optional external buffer (`k+0x4BC`/`k+0x4C0`), instead of 16 slots at `k+0x110`.
+* **Sample count:** keeps one already-read sample, so "nothing new" is a count of 1, not 0.
+* **Copy-out:** two sites (MOTION and MOTION2), and the output `KPADStatus` is 0xB0 bytes. The field offsets the hooks use are unchanged.
+
 ### Porting to another channel
 
-Both channels share one SDK build, so each address is the same code in a new place. `tools/sig.py` finds an address from a known DOL in a new DOL by masked byte signature. It masks relative branches, r2/r13 offsets and immediates.
+The 2007-SDK channels share one SDK build, so each address is the same code in a new place. `tools/sig.py` finds an address from a known DOL in a new DOL by masked byte signature. It masks relative branches, r2/r13 offsets and immediates.
 
 * **Data addresses** (SI tables, WPAD table, arena constants) are read from the matched lis/addi pairs.
-* **New profile:** add an entry to `CHANNELS` in `build.py`.
+* **New profile:** `tools/port.py <Forecast 00000001.app> <new 00000001.app> <key>` prints a `CHANNELS` entry for a 2007-SDK channel. Paste it into `build.py` and fill in the title.
 
 ## Debugging
 

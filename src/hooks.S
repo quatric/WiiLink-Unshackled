@@ -90,6 +90,134 @@
 
     .section .hooks, "ax"
 
+/* WPADProbe(chan, &type) entry: report a Classic Controller while a GC pad is in */
+    .globl hook_probe
+hook_probe:
+    SAVE
+    bl      gc_probe
+    stw     3, 0x08(1)
+    RESTORE_ALL
+    lwz     0, 0x08(1)
+    addi    1, 1, FRAME
+    cmpwi   0, 0
+    beq     1f
+    li      3, 0                    /* WPAD_ERR_NONE */
+    blr
+1:  stwu    1, -16(1)               /* replaced instruction */
+    b       RET_PROBE
+
+#ifdef SDK2009
+
+/* ---- 2009 SDK (KPAD/WPAD built Feb 2009) ---- */
+
+/* KPADiRead entry (r3 = channel): GameCube SI poller */
+    .globl hook_poll
+hook_poll:
+    SAVE
+    bl      gc_poll
+    RESTORE_ALL
+    lwz     0, 0x0c(1)
+    addi    1, 1, FRAME
+    stwu    1, -272(1)              /* replaced instruction */
+    b       RET_POLL
+
+/* KPADiRead sample-count check (r26 = KPAD block, r25 = channel) */
+    .globl hook_sample
+hook_sample:
+    SAVE
+    mr      3, 26
+    mr      4, 25
+    bl      gc_sample
+    RESTORE_ALL
+    lwz     0, 0x0c(1)
+    addi    1, 1, FRAME
+    lbz     0, 0x13b(26)            /* replaced instruction */
+    b       RET_SAMPLE
+
+/* Button compose leaf (r4 = extension type, r6 = Wii Remote buttons,
+ * r8 = Classic Controller buttons; r0 is live, r9 and cr0 are rewritten by
+ * the replaced andi.). Same mapping as the 2007 stub. */
+    .globl hook_buttons
+hook_buttons:
+    cmplwi  4, 2
+    bne     9f
+    andi.   9, 8, 0x0800            /* HOME */
+    beq     1f
+    ori     6, 6, 0x8000
+1:  andi.   9, 8, 0x0001            /* Up */
+    beq     1f
+    ori     6, 6, 0x0008
+1:  andi.   9, 8, 0x4000            /* Down */
+    beq     1f
+    ori     6, 6, 0x0004
+1:  andi.   9, 8, 0x0002            /* Left */
+    beq     1f
+    ori     6, 6, 0x0001
+1:  andi.   9, 8, 0x8000            /* Right */
+    beq     1f
+    ori     6, 6, 0x0002
+1:  andi.   9, 8, 0x0010            /* A */
+    beq     1f
+    ori     6, 6, 0x0800
+1:  andi.   9, 8, 0x0040            /* B */
+    beq     1f
+    ori     6, 6, 0x0400
+1:  andi.   9, 8, 0x0008            /* X -> 1 */
+    beq     1f
+    ori     6, 6, 0x0200
+1:  andi.   9, 8, 0x0020            /* Y -> 2 */
+    beq     1f
+    ori     6, 6, 0x0100
+1:  andi.   9, 8, 0x1000            /* Minus */
+    beq     1f
+    ori     6, 6, 0x1000
+1:  andi.   9, 8, 0x0400            /* Plus */
+    beq     9f
+    ori     6, 6, 0x0010
+9:  andi.   9, 6, 0x9fff            /* replaced instruction */
+    b       RET_BUTTONS
+
+/* KPADiRead copy-out, per-sample mode: entry r24 was just written, r26 = KPAD
+ * block, r25 = samples left, r22 = samples this read */
+    .globl hook_motion
+hook_motion:
+    SAVE
+    SAVE_FP
+    mr      3, 24
+    mr      4, 26
+    subf    5, 25, 22
+    cntlzw  5, 5
+    srwi    5, 5, 5
+    bl      cc_motion_k
+    RESTORE_FP
+    RESTORE_ALL
+    lwz     0, 0x0c(1)
+    addi    1, 1, FRAME
+    addic.  25, 25, -1              /* replaced instruction */
+    b       RET_MOTION
+
+/* KPADiRead copy-out, compose-once mode: entry r27, samples left r20 */
+    .globl hook_motion2
+hook_motion2:
+    SAVE
+    SAVE_FP
+    mr      3, 27
+    mr      4, 26
+    subf    5, 20, 22
+    cntlzw  5, 5
+    srwi    5, 5, 5
+    bl      cc_motion_k
+    RESTORE_FP
+    RESTORE_ALL
+    lwz     0, 0x0c(1)
+    addi    1, 1, FRAME
+    addic.  20, 20, -1              /* replaced instruction */
+    b       RET_MOTION2
+
+#else
+
+/* ---- 2007 SDK (KPAD/WPAD built June 2007) ---- */
+
 /* KPADiRead entry (r3 = channel): GameCube SI poller */
     .globl hook_poll
 hook_poll:
@@ -113,22 +241,6 @@ hook_sample:
     addi    1, 1, FRAME
     lbz     0, 0x10f(31)            /* replaced instruction */
     b       RET_SAMPLE
-
-/* WPADProbe(chan, &type) entry: report a Classic Controller while a GC pad is in */
-    .globl hook_probe
-hook_probe:
-    SAVE
-    bl      gc_probe
-    stw     3, 0x08(1)
-    RESTORE_ALL
-    lwz     0, 0x08(1)
-    addi    1, 1, FRAME
-    cmpwi   0, 0
-    beq     1f
-    li      3, 0                    /* WPAD_ERR_NONE */
-    blr
-1:  stwu    1, -16(1)               /* replaced instruction */
-    b       RET_PROBE
 
 /* KPADiRead button compose (r4 = extension type, r7 = Wii Remote buttons,
  * r9 = Classic Controller buttons): OR the Classic Controller into the Wii Remote.
@@ -194,3 +306,5 @@ hook_motion:
     addi    1, 1, FRAME
     addic.  15, 15, -1              /* replaced instruction */
     b       RET_MOTION
+
+#endif

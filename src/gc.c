@@ -1,4 +1,4 @@
-/* GameCube controller (port 1) -> Classic Controller bridge for the Forecast Channel.
+/* GameCube controller (port 1) -> Classic Controller bridge for the WiiLink channels.
  *
  * The channel links the SI library but not PAD, so nothing polls the pads.
  * gc_poll() drives the Serial Interface's own auto-polling (the approach from
@@ -185,9 +185,43 @@ static __attribute__((noinline)) void fill_cc(u8 *s, u32 h, u32 l, u32 b)
     s[0x36] = 8;                             /* format: classic + accel + pointer */
 }
 
+/* KPAD's sample ring (0x38-byte WPAD samples) in the per-channel KPAD block k:
+ *   2007 SDK: 16 slots at k+0x110, write index k+0x10E, count k+0x10F
+ *   2009 SDK: 16 slots at k+0x13C plus an optional external buffer
+ *             (pointer k+0x4BC, extra slots k+0x4C0); write index k+0x13A,
+ *             count k+0x13B, and the count keeps one already-read sample */
+#ifdef SDK2009
+#define K_IDX   0x13A
+#define K_CNT   0x13B
+#define K_FRESH 1                               /* count when nothing new is queued */
+static inline u32 ring_len(u8 *k)
+{
+    return 16 + *(volatile u32 *)(k + 0x4C0);
+}
+static inline u8 *ring_slot(u8 *k, u32 i)
+{
+    if (i < 16)
+        return k + 0x13C + i * 0x38;
+    return *(u8 *volatile *)(k + 0x4BC) + (i - 16) * 0x38;
+}
+#else
+#define K_IDX   0x10E
+#define K_CNT   0x10F
+#define K_FRESH 0
+static inline u32 ring_len(u8 *k)
+{
+    (void)k;
+    return 16;
+}
+static inline u8 *ring_slot(u8 *k, u32 i)
+{
+    return k + 0x110 + i * 0x38;
+}
+#endif
+
 static __attribute__((noinline)) void put_sample(u8 *k, u32 idx, u32 h, u32 l, u32 b)
 {
-    volatile u32 *p = (volatile u32 *)(k + 0x110 + (idx & 0xF) * 0x38);
+    volatile u32 *p = (volatile u32 *)ring_slot(k, idx % ring_len(k));
     u32 i;
 
     for (i = 0; i < 0x38 / 4; i++)
@@ -197,15 +231,16 @@ static __attribute__((noinline)) void put_sample(u8 *k, u32 idx, u32 h, u32 l, u
 
 void gc_sample(u8 *k, u32 chan)
 {
-    u32 h, l, b, i, idx, cnt;
+    u32 h, l, b, i, idx, cnt, len;
 
     if (chan || !gc_in(&h, &l))
         return;
 
     b = cc_buttons(h, l);
-    idx = k[0x10E] & 0xF;
-    cnt = k[0x10F];
-    if (cnt == 0) {
+    len = ring_len(k);
+    idx = k[K_IDX] % len;
+    cnt = k[K_CNT];
+    if (cnt <= K_FRESH) {
         /* nothing queued: no Wii Remote (0xFD), a bare one with nothing yet, or ours */
         u8 dev = k[0x5C];
         if (!(dev == 0 || dev == 0xFD || ST->ours))
@@ -213,8 +248,8 @@ void gc_sample(u8 *k, u32 chan)
         /* two samples: older with last frame's buttons, newer with this frame's */
         put_sample(k, idx, h, l, ST->prev_btn);
         put_sample(k, idx + 1, h, l, b);
-        k[0x10E] = (idx + 2) & 0xF;
-        k[0x10F] = 2;
+        k[K_IDX] = (idx + 2) % len;
+        k[K_CNT] = cnt + 2;
         ST->prev_btn = b;
         ST->ours = 1;
         return;
@@ -224,10 +259,10 @@ void gc_sample(u8 *k, u32 chan)
      * a real Nunchuk or Classic Controller is left alone */
     ST->ours = 0;
     ST->prev_btn = b;
-    if (cnt > 0x10)
-        cnt = 0x10;
+    if (cnt > len)
+        cnt = len;
     for (i = 0; i < cnt; i++) {
-        u8 *s = k + 0x110 + ((idx - cnt + i) & 0xF) * 0x38;
+        u8 *s = ring_slot(k, (idx + 2 * len - cnt + i) % len);
         if (s[0x28] == 0 || s[0x28] == 0xFD)
             fill_cc(s, h, l, b);
     }

@@ -24,7 +24,7 @@ DEVKIT = os.environ.get('DEVKITPPC', '/opt/devkitpro/devkitPPC')
 CC = DEVKIT + '/bin/powerpc-eabi-'
 SHARPII = os.environ.get('SHARPII', 'sharpii')
 
-# Per-channel addresses.  These channels use the same SDK build (June 2007), so every hook
+# Per-channel addresses.  Channels on the same SDK build (June 2007 unless 'sdk' says 2009) share every hook
 # site is the same code at a different address (tools/sig.py finds them).
 #   arena:   OSInit's four "addi rX,rX,lo" that build the arena start; lis is
 #            the high half they pair with.  __ArenaLo is where the hooks go.
@@ -101,23 +101,60 @@ CHANNELS = {
                   'BUTTONS': 0x800F16F4, 'MOTION': 0x800F1828},
         'clock': None,
     },
+    # 2009 SDK: KPAD was rewritten (see src/hooks.S); WPAD/SI/OS are the same code
+    'nintendo': {
+        'title': 'Nintendo Channel (USA, HATE)',
+        'dol_size': 3988896,
+        'sdk': 2009,
+        'hook_size': 0x2000,
+        'arena_lo': 0x807D30E0, 'stack_end': 0x807D10D8, 'lis': 0x807D,
+        'arena': [0x801EFF9C, 0x801F0044, 0x801EFFEC, 0x801F0078],
+        'defs': {
+            'SI_TYPES': 0x803BB508,
+            'SI_BUSY': 0x803BB4F0,
+            'SI_SHADOW': 0x803BB4F4,
+            'FN_SIGETTYPE': 0x80201C10,
+            'FN_OSDISABLE': 0x801F6430,
+            'FN_OSRESTORE': 0x801F6470,
+            'WPAD_TBL': 0x806C0710,
+            'KPAD_BASE': 0x806C3EA8,    # per-channel KPAD blocks...
+            'KPAD_STRIDE': 0x570,       # ...this far apart
+        },
+        'sites': {'POLL': 0x802314D0, 'SAMPLE': 0x8023164C, 'PROBE': 0x80225060,
+                  'BUTTONS': 0x8022EE54, 'MOTION': 0x80231B2C, 'MOTION2': 0x80231C9C},
+        'clock': None,
+    },
 }
-HOOK_SIZE = 0x1000              # code + 0x100 bytes of state, carved from the arena start
+HOOK_SIZE = 0x1000              # default: code + 0x100 bytes of state, carved from the arena start
 
-# name: (original word, stub symbol) -- the same instruction in every channel
+# per SDK, name: (original word, stub symbol) -- the same instruction in every channel
 SITES = {
-    'POLL':    (0x9421FF40, 'hook_poll'),     # KPADiRead: stwu r1,-192(r1)
-    'SAMPLE':  (0x881F010F, 'hook_sample'),   # KPADiRead: lbz r0,0x10F(r31)
-    'PROBE':   (0x9421FFF0, 'hook_probe'),    # WPADProbe: stwu r1,-16(r1)
-    'BUTTONS': (0x70E09FFF, 'hook_buttons'),  # KPADiRead: andi. r0,r7,0x9FFF
-    'MOTION':  (0x35EFFFFF, 'hook_motion'),   # KPADiRead: addic. r15,r15,-1 (after the copy-out)
+    2007: {
+        'POLL':    (0x9421FF40, 'hook_poll'),     # KPADiRead: stwu r1,-192(r1)
+        'SAMPLE':  (0x881F010F, 'hook_sample'),   # KPADiRead: lbz r0,0x10F(r31)
+        'PROBE':   (0x9421FFF0, 'hook_probe'),    # WPADProbe: stwu r1,-16(r1)
+        'BUTTONS': (0x70E09FFF, 'hook_buttons'),  # KPADiRead: andi. r0,r7,0x9FFF
+        'MOTION':  (0x35EFFFFF, 'hook_motion'),   # KPADiRead: addic. r15,r15,-1 (after the copy-out)
+    },
+    2009: {
+        'POLL':    (0x9421FEF0, 'hook_poll'),     # KPADiRead: stwu r1,-272(r1)
+        'SAMPLE':  (0x881A013B, 'hook_sample'),   # KPADiRead: lbz r0,0x13B(r26)
+        'PROBE':   (0x9421FFF0, 'hook_probe'),    # WPADProbe: stwu r1,-16(r1)
+        'BUTTONS': (0x70C99FFF, 'hook_buttons'),  # button compose: andi. r9,r6,0x9FFF
+        'MOTION':  (0x3739FFFF, 'hook_motion'),   # KPADiRead: addic. r25,r25,-1 (per-sample copy-out)
+        'MOTION2': (0x3694FFFF, 'hook_motion2'),  # KPADiRead: addic. r20,r20,-1 (compose-once copy-out)
+    },
 }
+
+
+def sites(ch):
+    return SITES[ch.get('sdk', 2007)]
 
 
 def layout(ch):
     """BASE/END/STATE and the four arena patches (address, old word, new word)."""
     base = ch['arena_lo']
-    end = base + HOOK_SIZE
+    end = base + ch.get('hook_size', HOOK_SIZE)
     assert end % 32 == 0
     def lo(v):
         d = v - (ch['lis'] << 16)
@@ -151,16 +188,18 @@ def build_blob(ch, base, state, debug_feed=False):
     tmp = tempfile.mkdtemp(prefix='fcpad')
     src = os.path.join(HERE, 'src')
     D = ['-D%s=0x%08Xu' % kv for kv in dict(ch['defs'], STATE=state).items()]
+    if ch.get('sdk', 2007) == 2009:
+        D.append('-DSDK2009')
     if debug_feed:
         D.append('-DDEBUG_FEED')
     run([CC + 'gcc'] + CFLAGS + ['-msoft-float'] + D + ['-c', src + '/gc.c', '-o', tmp + '/gc.o'])
     run([CC + 'gcc'] + CFLAGS + ['-mhard-float'] + D + ['-c', src + '/motion.c', '-o', tmp + '/motion.o'])
-    run([CC + 'gcc', '-mbig-endian', '-c', '-x', 'assembler-with-cpp', src + '/hooks.S', '-o', tmp + '/hooks.o'])
+    run([CC + 'gcc', '-mbig-endian', '-c', '-x', 'assembler-with-cpp'] + D + [src + '/hooks.S', '-o', tmp + '/hooks.o'])
     ld = open(tmp + '/link.ld', 'w')
     ld.write('SECTIONS {\n  . = 0x%08X;\n  .text : { *(.hooks) *(.text .text.*) *(.rodata .rodata.*) }\n'
              '  /DISCARD/ : { *(.comment) *(.eh_frame) *(.note*) *(.gnu.attributes) }\n}\n' % base)
     ld.close()
-    syms = ['--defsym=RET_%s=0x%08X' % (n, ch['sites'][n] + 4) for n in SITES]
+    syms = ['--defsym=RET_%s=0x%08X' % (n, ch['sites'][n] + 4) for n in sites(ch)]
     run([CC + 'ld', '-T', tmp + '/link.ld', '--no-undefined', '-o', tmp + '/b.elf'] + syms +
         [tmp + '/hooks.o', tmp + '/gc.o', tmp + '/motion.o'])
     # no data/bss outside .text allowed: everything must live in the one section
@@ -266,7 +305,7 @@ def patch_dol(data, clock=False, debug_feed=False):
                 dol.put(addr + 4 * j, n)
         print('clock patch applied')
     blob, syms = build_blob(ch, base, state, debug_feed)
-    for name, (orig, stub) in SITES.items():
+    for name, (orig, stub) in sites(ch).items():
         cur = dol.word(ch['sites'][name])
         if cur != orig:
             raise SystemExit('%s site 0x%08X: found 0x%08X, want 0x%08X (already patched?)' % (
@@ -279,7 +318,7 @@ def patch_dol(data, clock=False, debug_feed=False):
     payload = blob + b'\0' * (end - base - len(blob))           # code, then zeroed state up to END
     slot = dol.add_text(base, payload)
     only = os.environ.get('HOOKS')            # debugging: HOOKS=POLL,SAMPLE plants only those
-    for name, (orig, stub) in SITES.items():
+    for name, (orig, stub) in sites(ch).items():
         if only is not None and name not in only.split(','):
             continue
         site = ch['sites'][name]

@@ -101,3 +101,12 @@ void cc_motion(u8 *k, u32 chan, u32 first)
     K_F(k, 0x34) = cs;
     K_F(k, 0x38) = sn;
 }
+
+#ifdef SDK2009
+/* 2009 SDK: the copy-out loop has no channel register, so derive it from the
+ * KPAD block pointer (KPAD_BASE + chan * KPAD_STRIDE) */
+void cc_motion_k(u8 *k, u32 kblock, u32 first)
+{
+    cc_motion(k, (kblock - KPAD_BASE) / KPAD_STRIDE, first);
+}
+#endif
