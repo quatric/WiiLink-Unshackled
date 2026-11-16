@@ -24,7 +24,7 @@ DEVKIT = os.environ.get('DEVKITPPC', '/opt/devkitpro/devkitPPC')
 CC = DEVKIT + '/bin/powerpc-eabi-'
 SHARPII = os.environ.get('SHARPII', 'sharpii')
 
-# Per-channel addresses.  Both channels use the same SDK build, so every hook
+# Per-channel addresses.  These channels use the same SDK build (June 2007), so every hook
 # site is the same code at a different address (tools/sig.py finds them).
 #   arena:   OSInit's four "addi rX,rX,lo" that build the arena start; lis is
 #            the high half they pair with.  __ArenaLo is where the hooks go.
@@ -63,6 +63,42 @@ CHANNELS = {
         },
         'sites': {'POLL': 0x80144B70, 'SAMPLE': 0x80144C88, 'PROBE': 0x80137FC8,
                   'BUTTONS': 0x80145138, 'MOTION': 0x8014526C},
+        'clock': None,
+    },
+    'evc': {
+        'title': 'Everybody Votes Channel (USA, HAJE)',
+        'dol_size': 2653152,
+        'arena_lo': 0x80406FC0, 'stack_end': 0x80404FC0, 'lis': 0x8040,
+        'arena': [0x800FE9D0, 0x800FEA78, 0x800FEA20, 0x800FEAAC],
+        'defs': {
+            'SI_TYPES': 0x80283148,
+            'SI_BUSY': 0x80283130,
+            'SI_SHADOW': 0x80283134,
+            'FN_SIGETTYPE': 0x80155EDC,
+            'FN_OSDISABLE': 0x80105530,
+            'FN_OSRESTORE': 0x80105558,
+            'WPAD_TBL': 0x802AFA30,
+        },
+        'sites': {'POLL': 0x80158E50, 'SAMPLE': 0x80158F68, 'PROBE': 0x800DD068,
+                  'BUTTONS': 0x80159418, 'MOTION': 0x8015954C},
+        'clock': None,
+    },
+    'cmoc': {
+        'title': 'Check Mii Out Channel (USA, HAPE)',
+        'dol_size': 3410240,
+        'arena_lo': 0x80442740, 'stack_end': 0x80440728, 'lis': 0x8044,
+        'arena': [0x8011A148, 0x8011A1F0, 0x8011A198, 0x8011A224],
+        'defs': {
+            'SI_TYPES': 0x80324E40,
+            'SI_BUSY': 0x80324E28,
+            'SI_SHADOW': 0x80324E2C,
+            'FN_SIGETTYPE': 0x80174988,
+            'FN_OSDISABLE': 0x8012121C,
+            'FN_OSRESTORE': 0x80121244,
+            'WPAD_TBL': 0x80345490,
+        },
+        'sites': {'POLL': 0x800F112C, 'SAMPLE': 0x800F1244, 'PROBE': 0x800F66E8,
+                  'BUTTONS': 0x800F16F4, 'MOTION': 0x800F1828},
         'clock': None,
     },
 }
