@@ -1,0 +1,9 @@
+# Nintendo content and build output
+*.wad
+*.app
+*.dol
+*.elf
+__pycache__/
+.codesight/
+*.jpg
+out/
