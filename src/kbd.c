@@ -39,10 +39,10 @@ struct kst {
     u8 tries;               /* failed opens */
     u8 inited;
 };
-#define KS ((struct kst *)(STATE + 0x80))
-#define KBUF ((volatile u32 *)(STATE + 0xC0))      /* 32-byte aligned IPC buffer */
+#define KS ((struct kst *)(STATE + 0x100))
+#define KBUF ((volatile u32 *)(STATE + 0x140))     /* 32-byte aligned IPC buffer */
 #ifdef DEBUG_FEED
-#define KFEED ((volatile u32 *)(STATE + 0xE0))     /* test builds: a debugger writes messages here */
+#define KFEED ((volatile u32 *)(STATE + 0x160))    /* test builds: a debugger writes messages here */
 #endif
 
 typedef s32 (*ios_cb)(s32 result, void *arg);

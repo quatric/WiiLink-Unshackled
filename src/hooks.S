@@ -323,3 +323,12 @@ hook_kbd:
     lwz     12, 0(3)                /* replaced instruction */
     b       RET_KBD
 #endif
+
+#ifdef TILT
+/* Forecast Channel globe tilt angles (degrees), the News Channel's table:
+ * index 5 is level, 0 and 10 are tilted all the way over either way */
+    .globl tilt_angles
+    .balign 4
+tilt_angles:
+    .float -80.0, -73.0, -65.0, -55.0, -45.0, 0.0, 45.0, 55.0, 65.0, 73.0, 80.0
+#endif

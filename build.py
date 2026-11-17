@@ -9,7 +9,7 @@ The channel is recognised from its main DOL.  Builds the hooks in src/ with
 devkitPPC, links them at the start of the OS arena (right above the main
 stack), moves the arena start up past them, adds them to the main DOL as a new
 section (last slot) and plants a branch at each hook site.  --clock (Forecast
-Channel only) also applies forecast_us_clock_patch.py.  --accuweather
+and News Channels) also applies forecast_us_clock_patch.py / news_us_clock_patch.py.  --accuweather
 (Forecast Channel, wad mode) swaps the WeatherNews logo on the channel's banner
 and Wii Menu icon for AccuWeather's (banner.py).
 `wad` unpacks with Sharpii, patches content 1, repacks and fakesigns.
@@ -49,6 +49,22 @@ CHANNELS = {
         'sites': {'POLL': 0x8012BF30, 'SAMPLE': 0x8012C048, 'PROBE': 0x8011F388,
                   'BUTTONS': 0x8012C4F8, 'MOTION': 0x8012C62C},
         'clock': 'forecast_us_clock_patch',
+        # hold + / - / Up / Down to repeat them (src/motion.c)
+        'repeat': 0x101C,
+        # globe tilt (Up/Down, the curved-arrow buttons): the News Channel's
+        # 11 angles, -80..80 degrees, so it can tilt over to the far side
+        # (upside down) instead of stopping at 0..80
+        'patches': [
+            (0x80040B88, [0x2C000006], [0x2C00000B], 'globe tilt: step up to index 10 (was 5)'),
+            (0x80040B94, [0x38000005], [0x3800000A], 'globe tilt: clamp at index 10 (was 5)'),
+            (0x8001860C, [0x2C000005], [0x2C00000A], 'globe tilt: grey the tilt-up arrow at index 10'),
+            (0x8000F334, [0x38800000], [0x38800005], 'globe tilt: open the globe level (index 5 = 0 degrees)'),
+            (0x8000F344, [0x38800000], [0x38800005], 'globe tilt: open the globe level (index 5 = 0 degrees)'),
+            (0x80018A0C, [0x38800000], [0x38800005], 'globe tilt: Restore goes back to level'),
+        ],
+        # (lis address, addi address, hook symbol): point the angle table loads at tilt_angles
+        'sympatches': [(0x80040A58, 0x80040A60, 'tilt_angles'), (0x80040B08, 0x80040B10, 'tilt_angles'),
+                       (0x80040BA0, 0x80040BA4, 'tilt_angles'), (0x80040C04, 0x80040C08, 'tilt_angles')],
     },
     'news': {
         'title': 'News Channel (USA, HAGE)',
@@ -66,7 +82,7 @@ CHANNELS = {
         },
         'sites': {'POLL': 0x80144B70, 'SAMPLE': 0x80144C88, 'PROBE': 0x80137FC8,
                   'BUTTONS': 0x80145138, 'MOTION': 0x8014526C},
-        'clock': None,
+        'clock': 'news_us_clock_patch',
     },
     'evc': {
         'title': 'Everybody Votes Channel (USA, HAJE)',
@@ -147,7 +163,8 @@ CHANNELS = {
         'clock': None,
     },
 }
-HOOK_SIZE = 0x1000              # default: code + 0x100 bytes of state, carved from the arena start
+HOOK_SIZE = 0x1800              # default: code + state, carved from the arena start
+STATE_SIZE = 0x200             # gc.c 0x00-0x40, motion.c 0x40-0x100, kbd.c 0x100-0x200
 
 # per SDK, name: (original word, stub symbol) -- the same instruction in every channel
 SITES = {
@@ -196,7 +213,7 @@ def layout(ch):
     for i, a in enumerate(ch['arena']):
         old_lo = lo(base) if i < 2 else lo(ch['stack_end'])
         arena.append((a, old_lo, hi, end & 0xFFFF))
-    return base, end, end - 0x100, arena
+    return base, end, end - STATE_SIZE, arena
 
 
 def detect(data):
@@ -229,6 +246,11 @@ def build_blob(ch, base, state, debug_feed=False):
         D.append('-DKBD')
     if debug_feed:
         D.append('-DDEBUG_FEED')
+    if 'repeat' in ch:
+        D.append('-DREPEAT_MASK=0x%04Xu' % ch['repeat'])
+    if 'sympatches' in ch:
+        D.append('-DTILT')
+    D += os.environ.get('HOOK_CFLAGS', '').split()     # test builds
     objs = [tmp + '/hooks.o', tmp + '/gc.o', tmp + '/motion.o']
     run([CC + 'gcc'] + CFLAGS + ['-msoft-float'] + D + ['-c', src + '/gc.c', '-o', tmp + '/gc.o'])
     run([CC + 'gcc'] + CFLAGS + ['-mhard-float'] + D + ['-c', src + '/motion.c', '-o', tmp + '/motion.o'])
@@ -334,7 +356,7 @@ def patch_dol(data, clock=False, debug_feed=False):
     dol = Dol(data)
     if clock:
         if not ch['clock']:
-            raise SystemExit('--clock is only for the Forecast Channel')
+            raise SystemExit('--clock is only for the Forecast and News Channels')
         sys.path.insert(0, HERE)
         clk = __import__(ch['clock'])
         for addr, old, new, desc in clk.PATCHES:
@@ -366,6 +388,13 @@ def patch_dol(data, clock=False, debug_feed=False):
                 raise SystemExit('patch 0x%08X: found 0x%08X, want 0x%08X' % (addr + 4 * j, cur, o))
             dol.put(addr + 4 * j, n)
         print('  patched 0x%08X: %s' % (addr, what))
+    for lis_a, addi_a, sym in ch.get('sympatches', []):
+        lis, addi, v = dol.word(lis_a), dol.word(addi_a), syms[sym]
+        if lis >> 26 != 15 or addi >> 26 != 14 or (addi >> 16) & 31 != (lis >> 21) & 31:
+            raise SystemExit('sympatch 0x%08X/0x%08X: not a lis/addi pair' % (lis_a, addi_a))
+        dol.put(lis_a, (lis & 0xFFFF0000) | ((v + 0x8000) >> 16 & 0xFFFF))
+        dol.put(addi_a, (addi & 0xFFFF0000) | (v & 0xFFFF))
+        print('  patched 0x%08X/0x%08X: -> %s 0x%08X' % (lis_a, addi_a, sym, v))
     payload = blob + b'\0' * (end - base - len(blob))           # code, then zeroed state up to END
     slot = dol.add_text(base, payload)
     only = os.environ.get('HOOKS')            # debugging: HOOKS=POLL,SAMPLE plants only those

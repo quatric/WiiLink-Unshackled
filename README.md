@@ -15,9 +15,28 @@ python3 build.py wad "<channel> (USA) (WiiLink).wad" out.wad [--clock] [--accuwe
 python3 build.py dol 00000001.app out.app [--clock]
 ```
 
-The channel is recognised from its main DOL. `--clock` (Forecast Channel only) also applies `forecast_us_clock_patch.py`, which enables the clock on US consoles with a 12-hour a.m./p.m. display.
+The channel is recognised from its main DOL. `--clock` (Forecast and News Channels) also applies `forecast_us_clock_patch.py` or `news_us_clock_patch.py`. Those enable the clock on US consoles with a 12-hour a.m./p.m. display.
 
 You need devkitPPC (set `DEVKITPPC`; default `/opt/devkitpro/devkitPPC`). The `wad` mode also needs Sharpii (set `SHARPII`). The output WAD is fakesigned.
+
+## Clock on US consoles (`--clock`)
+
+Both channels have a clock in the top-left corner, but Nintendo hid it on US-region consoles. JPN and EUR consoles show it. The two channels share the clock code.
+
+* **Forecast Channel:** `forecast_us_clock_patch.py`.
+* **News Channel:** `news_us_clock_patch.py`. Every screen used to set the clock's hide flag to "region is USA" (17 places); they now set it the way they do on EUR/JPN consoles.
+* **Both:** the clock uses the channel's own 12-hour "h:mm a.m./p.m." formatter on US consoles, whatever the system language.
+
+As on EUR/JPN consoles, the clock fades out while the pointer is over the button under it (the News Channel's "Text Zoom" button, for example).
+
+## Forecast Channel extras
+
+The Forecast Channel build also gets:
+
+* **Hold to repeat:** holding +, −, Up or Down repeats it after 0.4 s, then every 0.15 s. That zooms or tilts the globe step after step, or flips through the forecast pages, like holding them in the News Channel.
+* **Globe tilt both ways:** Up/Down (and the curved-arrow buttons) tilt the globe. They now use the News Channel's 11 angles (−80° to 80°, level in the middle) instead of 0° to 80°. The globe can tilt over to its far side, upside down. It opens level, and Restore goes back to level.
+
+The tilt code is the same in both channels, apart from the angle table and its bounds. The new table lives in the hook section, and `build.py` points the channel's four table loads at it (`sympatches`).
 
 ## Forecast Channel: AccuWeather logo
 
@@ -53,8 +72,8 @@ The channel's text-input library is an early build of the SDK's SoftwareKeyboard
 | HOME | HOME | START |
 | D-pad | D-pad | D-pad |
 
-* **Pointer:** the sticks move it like a mouse. About 1 s crosses the screen at full tilt.
-* **Twist:** goes up to about ±60°. In the Forecast Channel, hold A to grab the globe and push the right stick or C-stick to rotate it.
+* **Pointer:** the sticks move it like a mouse, out to every edge of the screen, on 16:9 and 4:3 TVs alike. The channels map the Wii Remote's pos ±1 to only part of the screen, so the stick's range comes from the console's aspect ratio setting (SYSCONF `IPL.AR`). Light pushes aim finely. Held at full tilt, the pointer speeds up to four times faster over about 2/3 s, for fast flings, such as spinning the Forecast Channel's globe.
+* **Twist:** the right stick or C-stick's direction is the twist angle. Up is level, right is 90° clockwise, down is upside down, so circling the stick turns the Wii Remote all the way round. Letting go levels it again. In the Forecast Channel, hold A to grab the globe and circle the stick to rotate it.
 * **GameCube pad alone:** works with no Wii Remote connected. KPAD sees it as a Classic Controller on channel 0.
 * **GameCube pad with a Wii Remote:** the pad acts as the remote's extension. A real Nunchuk or Classic Controller takes priority.
 * **The remote's own pointer:** IR pointing and twist still work. Whichever input moved last is in control.
@@ -71,7 +90,7 @@ Five hooks branch out of KPAD/WPAD:
 | BUTTONS | KPAD button compose | ORs Classic Controller buttons into the Wii Remote buttons. |
 | MOTION | After each sample is copied out | Writes the stick pointer and twist into the caller's copy only, so KPAD's IR tracking state is never touched. |
 
-The code (and 0x100 bytes of state) takes the first 0x1000 bytes of the OS arena (0x2000 in the Nintendo and Everybody Votes Channels). That's `__ArenaLo`, right above the debugger stack. OSInit's arena constants (each a `lis`/`addi` pair) move up past it, so the game never allocates over it.
+The code and 0x200 bytes of state take the first 0x1800 bytes of the OS arena (0x2000 in the Nintendo and Everybody Votes Channels). The state is split into 0x00 for gc.c, 0x40 for motion.c and 0x100 for kbd.c. That's `__ArenaLo`, right above the debugger stack. OSInit's arena constants (each a `lis`/`addi` pair) move up past it, so the game never allocates over it.
 
 ### The boot loader packs sections
 
