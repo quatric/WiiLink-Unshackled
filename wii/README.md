@@ -27,7 +27,7 @@ GodModeWii. Every controller libwiiinput reads works: Wii Remote, Classic Contro
 
 | Channel | Features |
 |---|---|
-| Forecast Channel (USA) | Classic Controller and GameCube pads, clock on US consoles, globe tilts both ways |
+| Forecast Channel (USA) | Classic Controller and GameCube pads, clock on US consoles, globe tilts both ways, "Calm" for no wind (off by default) |
 | News Channel (USA) | pads, clock on US consoles |
 | Everybody Votes Channel (USA) | pads, USB keyboard, no daily suggestion limit |
 | Check Mii Out Channel (USA) | pads, gold pants Miis, debug menu (hold 1+2; off by default; the three entries that freeze a console do nothing) |
@@ -43,7 +43,7 @@ GodModeWii. Every controller libwiiinput reads works: Wii Remote, Classic Contro
 
 The USB keyboard, the globe tilt table and the Message Board photos live in the controller patch's hook section, so
 they need it ticked. The clock patch is only offered for the US builds: the EU and Japanese ones already show the clock.
-The AccuWeather banner (`build.py --accuweather`) isn't in the app yet.
+The app only changes content 1 (the main DOL), so the options that change the other contents are `build.py`-only for now: `--accuweather`, `--aplogo`, and `--wiilink` (whose DOL part alone would leave the manuals and layouts unchanged, so the app doesn't offer it either).
 
 ### What it checks
 

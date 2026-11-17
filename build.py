@@ -2,8 +2,9 @@
 """Classic Controller + GameCube controller patch for WiiLink's channels and the Photo Channel
 (Everybody Votes Channel: also USB keyboard and no daily suggestion limit).
 
-  build.py dol <00000001.app in> <00000001.app out> [--clock] [--debug-feed] [--debug-menu]
-  build.py wad <channel .wad> <out.wad> [--clock] [--accuweather] [--debug-feed] [--debug-menu]
+  build.py dol <00000001.app in> <00000001.app out> [--clock] [--calm] [--wiilink] [--debug-feed] [--debug-menu]
+  build.py wad <channel .wad> <out.wad> [--clock] [--calm] [--wiilink] [--accuweather] [--aplogo]
+                                       [--debug-feed] [--debug-menu]
   build.py export <patches.bin> <channel .wad>...    (for the Wii app, wii/)
 
 The channel is recognised from its main DOL.  Builds the hooks in src/ with
@@ -13,7 +14,12 @@ section (last slot) and plants a branch at each hook site.  --clock (Forecast
 and News Channels) also applies forecast_us_clock_patch.py / news_us_clock_patch.py.  --accuweather
 (Forecast Channel, wad mode) swaps the WeatherNews logo on the channel's banner
 and Wii Menu icon for AccuWeather's (banner.py).  --debug-menu (Check Mii Out
-Channel) lets 1+2 open the developers' debug overlay.
+Channel) lets 1+2 open the developers' debug overlay.  --calm (Forecast) shows
+wind with no direction as "Calm" on US consoles, as elsewhere, not "None".
+--wiilink (every channel) says WiiLink for WiiConnect24 where it means the
+service, in the DOL's messages and, in wad mode, the manual, layouts and banner
+(res.py).  In wad mode --accuweather also changes the in-channel credit line and
+the manual, and --aplogo (News) puts AP's current logo in the manual.
 `wad` unpacks with Sharpii, patches content 1 (decompressing it if WiiLink LZ-packed it), repacks and fakesigns.
 
 Mapping (Wii Remote <- Classic Controller / GameCube):
@@ -67,6 +73,19 @@ CHANNELS = {
         # (lis address, addi address, hook symbol): point the angle table loads at tilt_angles
         'sympatches': [(0x80040A58, 0x80040A60, 'tilt_angles'), (0x80040B08, 0x80040B10, 'tilt_angles'),
                        (0x80040BA0, 0x80040BA4, 'tilt_angles'), (0x80040C04, 0x80040C08, 'tilt_angles')],
+        # Wind direction code 0 means no wind.  The wind line (0x8001F110: direction r4,
+        # speed r5) prints it as a word only when the console's area is not a "USA" one
+        # (SCGetProductArea: USA, Brazil, Korea, ... set 0x8033CEFC (r13-27140) to 1):
+        # elsewhere it reads "Calm" / "Windstill" / "Pas de vent" ..., in the USA just the
+        # speed ("3 mph").  The words come from [language][direction] tables, 0x801994D8
+        # for USA consoles and 0x80199748 for the rest, which differ only in English:
+        # "None" and "Calm".  --calm takes the other areas' branch for direction 0 and
+        # points the USA table's English entry at "Calm" (also used by the city labels,
+        # 0x8001E10C, which showed "None").
+        'feature_patches': [
+            ('calm', 0x8001F148, [0x419A0180], [0x419A0250], 'wind direction 0: the word ("Calm"), not just the speed'),
+            ('calm', 0x8019951C, [0x80199448], [0x801996B8], 'wind direction 0 in English: "Calm", not "None"'),
+        ],
     },
     'news': {
         'title': 'News Channel (USA, HAGE)',
@@ -798,7 +817,10 @@ FEATURE_INFO = {        # id: (name, on by default, needs the hook section)
     'cdbsd': ('Message Board photos from the SD card', True, True),
     'clock': ('Clock on US consoles (12-hour)', True, False),
     'debugmenu': ('Debug menu (hold 1+2)', False, False),
+    'calm': ('Calm wind reads "Calm" (not "None")', False, False),
+    'wiilink': ('"WiiLink" for "WiiConnect24" in messages', False, False),
 }
+OPTIONAL = ('clock', 'debugmenu', 'calm', 'wiilink')   # build.py applies these only when asked
 
 
 class Plan:
@@ -844,6 +866,22 @@ class Plan:
         for addr, old, new, what in ch.get('debug_patches', []):
             for j, (o, n) in enumerate(zip(old, new)):
                 word('debugmenu', addr + 4 * j, o, n)
+        for feat, addr, old, new, what in ch.get('feature_patches', []):
+            for j, (o, n) in enumerate(zip(old, new)):
+                word(feat, addr + 4 * j, o, n)
+        # --wiilink: the same text edits as res.py, on the DOL's own UTF-16 messages
+        sys.path.insert(0, HERE)
+        import res
+        for i in range(7, 18):                    # data sections
+            o, sz = dol.field(0, i), dol.field(0x90, i)
+            if not sz:
+                continue
+            new = res.edit_utf16(dol.d, res.text_rules({'wiilink'}), o, o + sz, must=res.KEYWORDS)
+            if new:
+                for w in range(o & ~3, o + sz, 4):
+                    if new[w:w + 4] != dol.d[w:w + 4]:
+                        a = dol.field(0x48, i) + w - o
+                        word('wiilink', a, dol.word(a), struct.unpack('>I', new[w:w + 4])[0])
         for lis_a, addi_a, sym in ch.get('sympatches', []):
             lis, addi, v = dol.word(lis_a), dol.word(addi_a), self.syms[sym]
             if lis >> 26 != 15 or addi >> 26 != 14 or (addi >> 16) & 31 != (lis >> 21) & 31:
@@ -889,7 +927,7 @@ class Plan:
         return bytes(d)
 
 
-def patch_dol(data, clock=False, debug_feed=False, debug_menu=False):
+def patch_dol(data, clock=False, debug_feed=False, debug_menu=False, extra=()):
     key, ch = detect(data)
     if debug_menu and not ch.get('debug_patches'):
         raise SystemExit('--debug-menu is only for the Check Mii Out Channel')
@@ -897,11 +935,16 @@ def patch_dol(data, clock=False, debug_feed=False, debug_menu=False):
         raise SystemExit('--clock is only for the Forecast and News Channels')
     print('main DOL:', ch['title'])
     p = Plan(data, debug_feed)
-    feats = [f for f in p.groups if f not in ('clock', 'debugmenu')]
+    feats = [f for f in p.groups if f not in OPTIONAL]
     if clock:
         feats.append('clock')
     if debug_menu:
         feats.append('debugmenu')
+    for f in extra:
+        if f == 'calm' and 'calm' not in p.groups:
+            raise SystemExit('--calm is only for the Forecast Channel')
+        if f in p.groups:
+            feats.append(f)
     for f in feats:
         print('  %-9s %d words' % (f, len(p.groups.get(f, []))))
     print('hook section: DOL slot %d, 0x%08X-0x%08X (%d bytes code, state at 0x%08X); arena now starts at 0x%08X' % (
@@ -962,6 +1005,8 @@ def export(out, wads):
         if 'clock' in p.groups and tid & 0xFF != ord('E'):
             raise SystemExit('%s: the clock patch is only for the US builds (EU/JP ones show the clock)' % w)
         for fid, fname, on, needs in p.features():
+            if fid == 'wiilink':          # the app can't change the other contents yet: only offer it with them
+                continue
             words = b''.join(struct.pack('>III', *x) for x in p.groups.get(fid, []))
             flags = (1 if on else 0) | (2 if needs else 0) | (4 if fid == 'pad' else 0)
             feats.append((fid, fname, flags, len(p.groups.get(fid, [])), put(words) if words else 0))
@@ -1016,30 +1061,40 @@ def main():
     feed = '--debug-feed' in sys.argv
     accu = '--accuweather' in sys.argv
     dbg = '--debug-menu' in sys.argv
+    wl = '--wiilink' in sys.argv
+    ap = '--aplogo' in sys.argv
+    extra = [f for f, on in (('calm', '--calm' in sys.argv), ('wiilink', wl)) if on]
     if len(a) != 3 or a[0] not in ('dol', 'wad'):
         raise SystemExit(__doc__)
     mode, src, dst = a
     if mode == 'dol':
-        if accu:
-            raise SystemExit('--accuweather needs wad mode (the banner is content 0)')
-        patched = patch_dol(main_dol(open(src, 'rb').read()), clock, feed, dbg)
+        if accu or ap:
+            raise SystemExit('--accuweather and --aplogo need wad mode (they change other contents)')
+        patched = patch_dol(main_dol(open(src, 'rb').read()), clock, feed, dbg, extra)
         open(dst, 'wb').write(patched)
         return
     tmp = tempfile.mkdtemp(prefix='fcwad')
     run([SHARPII, 'WAD', '-u', src, tmp + '/u'])
     app = tmp + '/u/00000001.app'
     main = main_dol(open(app, 'rb').read())
-    if accu and detect(main)[0] != 'forecast':
+    key = detect(main)[0]
+    if accu and key != 'forecast':
         raise SystemExit('--accuweather is only for the Forecast Channel')
-    patched = patch_dol(main, clock, feed, dbg)
+    if ap and key != 'news':
+        raise SystemExit('--aplogo is only for the News Channel')
+    patched = patch_dol(main, clock, feed, dbg, extra)
     open(app, 'wb').write(patched)
+    sys.path.insert(0, HERE)
     if accu:
-        sys.path.insert(0, HERE)
         import banner
         bnr = tmp + '/u/00000000.app'
         new = banner.patch_opening(open(bnr, 'rb').read())
         open(bnr, 'wb').write(new)
         print('banner: WeatherNews logo -> AccuWeather')
+    rf = [f for f, on in (('accuweather', accu), ('wiilink', wl), ('aplogo', ap)) if on]
+    if rf:
+        import res
+        print('resources (%s): changed %s' % (', '.join(rf), ', '.join(res.apply(tmp + '/u', rf, skip=('00000001.app',)))))
     if os.path.exists(dst):
         os.remove(dst)
     run([SHARPII, 'WAD', '-p', tmp + '/u', dst, '-f'])

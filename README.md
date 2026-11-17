@@ -22,8 +22,8 @@ Adds Classic Controller and GameCube controller support to WiiLink's channels, t
 Sizes are for the uncompressed DOL. Most of these WADs store content 1 LZ-compressed; `build.py` unpacks it and writes the patched DOL back uncompressed (the boot program loads either).
 
 ```
-python3 build.py wad "<channel> (USA) (WiiLink).wad" out.wad [--clock] [--accuweather]
-python3 build.py dol 00000001.app out.app [--clock]
+python3 build.py wad "<channel> (USA) (WiiLink).wad" out.wad [--clock] [--calm] [--wiilink] [--accuweather] [--aplogo]
+python3 build.py dol 00000001.app out.app [--clock] [--calm] [--wiilink]
 ```
 
 The Photo Channel isn't a WiiLink channel: use the Photo Channel 1.1 system title WAD (`Photo Channel v1.1 (World) (v3) (Channel).wad`). The channel is recognised from its main DOL. `--clock` (Forecast and News Channels) also applies `forecast_us_clock_patch.py` or `news_us_clock_patch.py`. Those enable the clock on US consoles with a 12-hour a.m./p.m. display.
@@ -49,15 +49,45 @@ The Forecast Channel build also gets:
 
 The tilt code is the same in both channels, apart from the angle table and its bounds. The new table lives in the hook section, and `build.py` points the channel's four table loads at it (`sympatches`).
 
-## Forecast Channel: AccuWeather logo
+## Forecast Channel: calm wind (`--calm`)
 
-`--accuweather` (Forecast Channel, `wad` mode) replaces the WeatherNews logo on the channel's Wii Menu banner and icon with AccuWeather's. `banner.py` does the work on content 0 (`opening.bnr`), and can also be run on its own: `python3 banner.py 00000000.app out.app`.
+The forecast data gives each wind a direction code, and code 0 means no wind. The channel prints that as a word ("Calm", "Windstill", "Pas de vent", "Viento en calma", "Assenza di vento", "Windstil", in the system language) only when the console's area is not a "USA" one. `SCGetProductArea` sorts the areas: USA, Brazil, Korea, Taiwan-ROC and Asia count as USA; Japan, Europe, Australia and Latin America don't. On a US console the line shows just the speed ("3 mph"), and the city labels on the globe say "None".
+
+So "Calm" needs two things: WiiLink's data sending direction 0 for the city, and a console outside the USA area. `--calm` drops the second: direction 0 then reads "Calm" on US consoles as well, on the forecast screens and on the globe. It changes two words: the wind line's branch for direction 0 (0x8001F148) and the US table's English entry ("None" becomes "Calm").
+
+Tested in Dolphin with a test build that forced direction 0 for the current weather: an unpatched US console showed "3 mph", with `--calm` it showed "Calm".
+
+## Forecast Channel: AccuWeather (`--accuweather`)
+
+`--accuweather` (Forecast Channel, `wad` mode) replaces WeatherNews with AccuWeather in three places:
+
+* **The Wii Menu banner and icon:** the logo (below). `banner.py` does the work on content 0 (`opening.bnr`), and can also be run on its own: `python3 banner.py 00000000.app out.app`.
+* **In the channel:** the "supported by weathernews" credit line under the forecast (`TPLWeather.tpl`, images 22 to 25: plain and outlined, and the Japanese "ウェザーニュース" versions) reads "supported by AccuWeather". The channel's own "supported by " is kept; the new name is drawn to match its lettering (`tools/mkcredit.py`, Verdana Bold fitted to the original pixel by pixel, in `assets/accuweather/credit*.ia4`).
+* **The manual:** the "supported by weathernews" captions (English, French, Spanish) and the Source page: "provided by AccuWeather, Inc." and https://www.accuweather.com. The screenshots in the manual still show the old credit; it is too small to read in them.
+
+`res.py` makes the channel and manual changes. There is no "weathernews" in the channel's `banner.rso` (checked as stored, LZ-unpacked and as UTF-16), and `TPLCommon.tpl` has only NASA's image credits.
+
+### The logo
 
 * The logo has its real colours: a Hero Orange (#F05514) sun and a black wordmark, per [AccuWeather's brand guidelines](https://developer.accuweather.com/documentation/brand-guidelines).
 * It is resized to the logo's 7:1 proportions and has half a sun height of clear space on the white plate.
 * The banner's "supported by weathernews" line becomes "supported by AccuWeather".
 
 The textures in `assets/accuweather/` are AccuWeather's official horizontal logo (`AW_RGB_R.svg`), rendered with `resvg -w 140 -h 20` (banner) and `-w 112 -h 16` (icon), then converted with `tools/mktpl.py`. Like the WeatherNews logo they replace, they are IA4 textures tinted by their material. The material maps intensity 0 to black and intensity 1 to Hero Orange, so a single small texture carries both colours. AccuWeather's logo and name are AccuWeather's trademarks.
+
+## WiiLink for WiiConnect24 (`--wiilink`)
+
+`--wiilink` (every channel) says "WiiLink" where the channels say "WiiConnect24" for the service that brings their data: in the manuals, the layouts' text (error messages and the like), the message files (the Nintendo Channel's) and the News Channel's Wii Menu banner, whose letter-spaced "W i i C o n n e c t 2 4" becomes "W i i L i n k". In `dol` mode (and in the Wii app) only the messages inside the main DOL change; in `wad` mode `res.py` does the rest.
+
+* Sentences about the Wii Settings option keep "WiiConnect24", because the console still calls it that: "WiiConnect24 Standby Connection is currently turned off", "turn your WiiConnect24 setting on in the Wii Settings". This is done sentence by sentence, in all seven languages.
+* "Nintendo" changes only where Nintendo stood for the service's operator: the Forecast manual's "Nintendo may not be able to answer every question" (three languages), the Everybody Votes manual's "send your suggested question to Nintendo" (three languages) and Check Mii Out's contest text "Please Contact Nintendo For Further Information". Copyright notices, "Club Nintendo" and "created by Nintendo" stay.
+* Text only ever gets shorter, so every string stays in its own space. Check Mii Out's contest script counts its strings' lengths, so there the line keeps its length (with a trailing space).
+
+Main DOLs with WiiConnect24 messages: the Food and Demae Channels (their error messages). The other channels keep theirs in layouts or manuals.
+
+## News Channel: AP logo (`--aplogo`)
+
+`--aplogo` (News Channel, `wad` mode) replaces the manual's Associated Press logo (the 2000s "AP Associated Press" one, on the Source page) with AP's current logo: the black AP over a red bar, from `Associated_Press_logo_2012.svg` on Wikimedia Commons, at the manual's 51 pixel height (`assets/news/ap_logo.gif`).
 
 ## Everybody Votes Channel extras
 
@@ -80,13 +110,22 @@ The Check Mii Out Channel still contains its developers' debug overlay. The over
 
 * **Up/Down** moves the `>` cursor, **A** turns the selected entry on or off (`+` marks entries that are on), and **B** closes the overlay.
 * The channel still sees these button presses too, so close the overlay before using the channel normally.
-* **Debug Save Data Access**, **Debug Menu** and **Rare Message Check** switch to developer scenes that freeze a retail console, so the patch makes those three entries do nothing.
+* **Debug Save Data Access**, **Debug Menu** and **Rare Message Check** switch to developer scenes that freeze a retail console, so the patch makes those three entries do nothing. Checked in Dolphin: selecting each of them with A leaves the channel running and the overlay working.
 * Entries include Console, Debug Save Data Access, Rare Message Check, Safety Frame, Save Data Clear, All Your Base, Debug Print, Debug See Result, Debug Contest Off Limit, the Settings/Startup/Request/Response/Cache Dumps, Cache Clear, No Cache, NWC24 Tmp Error Occur and Disp Mii Info.
 * **All Your Base** makes the channel treat every Mii as if it had been made on this Wii. It overrides the channel's check of a Mii's creator ID, so the Mii doesn't have to come from this console.
 
 ```bash
 python3 build.py wad "Check Mii Out Channel (USA) (WiiLink).wad" "Check Mii Out Channel (USA) (WiiLink) [CC & GC + gold pants + debug menu].wad" --debug-menu
 ```
+
+## Debug modes in the other channels
+
+Found while looking, not patches (yet):
+
+* **Digicam Print / Photo Prints Channel:** the developers' scene graph is still in the DOL, with a `DBG_SceneLayout` scene and developer exits ("to the Print Channel", "to the keyboard test", "to the network test", "to the minigame" `H_Edit_Game`, a scene of its own). There is also an offline test mode: when a byte of the account data the channel keeps is 6, every server request answers "Debug No Network Mode" and the screens fill with "test( debug mode )" data. Starting the channel in `Z_1xxx` or `DBG_SceneLayout` instead of `A_Boot` only leads to the normal title screen, so the menu behind those exits hasn't been reached yet.
+* **Everybody Votes Channel:** a `DebugLayout` class.
+* **Nintendo Channel:** EGG's debug root (`EGGRootDebug`, `dsDebug_c`).
+* **Wii Room / Wii no Ma:** a debug server switch ("use server = DEBUG") and `Sky_Weather_Debug` layouts.
 
 ## Photo Channel: Message Board photos on the SD card
 
