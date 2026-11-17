@@ -3,13 +3,15 @@
 (Everybody Votes Channel: also USB keyboard and no daily suggestion limit).
 
   build.py dol <00000001.app in> <00000001.app out> [--clock] [--debug-feed]
-  build.py wad <channel .wad> <out.wad> [--clock] [--debug-feed]
+  build.py wad <channel .wad> <out.wad> [--clock] [--accuweather] [--debug-feed]
 
 The channel is recognised from its main DOL.  Builds the hooks in src/ with
 devkitPPC, links them at the start of the OS arena (right above the main
 stack), moves the arena start up past them, adds them to the main DOL as a new
 section (last slot) and plants a branch at each hook site.  --clock (Forecast
-Channel only) also applies forecast_us_clock_patch.py.
+Channel only) also applies forecast_us_clock_patch.py.  --accuweather
+(Forecast Channel, wad mode) swaps the WeatherNews logo on the channel's banner
+and Wii Menu icon for AccuWeather's (banner.py).
 `wad` unpacks with Sharpii, patches content 1, repacks and fakesigns.
 
 Mapping (Wii Remote <- Classic Controller / GameCube):
@@ -399,18 +401,30 @@ def main():
     a = [x for x in sys.argv[1:] if not x.startswith('--')]
     clock = '--clock' in sys.argv
     feed = '--debug-feed' in sys.argv
+    accu = '--accuweather' in sys.argv
     if len(a) != 3 or a[0] not in ('dol', 'wad'):
         raise SystemExit(__doc__)
     mode, src, dst = a
     if mode == 'dol':
+        if accu:
+            raise SystemExit('--accuweather needs wad mode (the banner is content 0)')
         patched = patch_dol(open(src, 'rb').read(), clock, feed)
         open(dst, 'wb').write(patched)
         return
     tmp = tempfile.mkdtemp(prefix='fcwad')
     run([SHARPII, 'WAD', '-u', src, tmp + '/u'])
     app = tmp + '/u/00000001.app'
+    if accu and detect(open(app, 'rb').read())[0] != 'forecast':
+        raise SystemExit('--accuweather is only for the Forecast Channel')
     patched = patch_dol(open(app, 'rb').read(), clock, feed)
     open(app, 'wb').write(patched)
+    if accu:
+        sys.path.insert(0, HERE)
+        import banner
+        bnr = tmp + '/u/00000000.app'
+        new = banner.patch_opening(open(bnr, 'rb').read())
+        open(bnr, 'wb').write(new)
+        print('banner: WeatherNews logo -> AccuWeather')
     if os.path.exists(dst):
         os.remove(dst)
     run([SHARPII, 'WAD', '-p', tmp + '/u', dst, '-f'])

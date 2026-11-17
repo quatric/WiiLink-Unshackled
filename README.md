@@ -11,13 +11,23 @@ Adds Classic Controller and GameCube controller support to WiiLink's USA channel
 | Nintendo Channel | HATE | 3,988,896 bytes |
 
 ```
-python3 build.py wad "<channel> (USA) (WiiLink).wad" out.wad [--clock]
+python3 build.py wad "<channel> (USA) (WiiLink).wad" out.wad [--clock] [--accuweather]
 python3 build.py dol 00000001.app out.app [--clock]
 ```
 
 The channel is recognised from its main DOL. `--clock` (Forecast Channel only) also applies `forecast_us_clock_patch.py`, which enables the clock on US consoles with a 12-hour a.m./p.m. display.
 
 You need devkitPPC (set `DEVKITPPC`; default `/opt/devkitpro/devkitPPC`). The `wad` mode also needs Sharpii (set `SHARPII`). The output WAD is fakesigned.
+
+## Forecast Channel: AccuWeather logo
+
+`--accuweather` (Forecast Channel, `wad` mode) replaces the WeatherNews logo on the channel's Wii Menu banner and icon with AccuWeather's. `banner.py` does the work on content 0 (`opening.bnr`), and can also be run on its own: `python3 banner.py 00000000.app out.app`.
+
+* The logo has its real colours: a Hero Orange (#F05514) sun and a black wordmark, per [AccuWeather's brand guidelines](https://developer.accuweather.com/documentation/brand-guidelines).
+* It is resized to the logo's 7:1 proportions and has half a sun height of clear space on the white plate.
+* The banner's "supported by weathernews" line becomes "supported by AccuWeather".
+
+The textures in `assets/accuweather/` are AccuWeather's official horizontal logo (`AW_RGB_R.svg`), rendered with `resvg -w 140 -h 20` (banner) and `-w 112 -h 16` (icon), then converted with `tools/mktpl.py`. Like the WeatherNews logo they replace, they are IA4 textures tinted by their material. The material maps intensity 0 to black and intensity 1 to Hero Orange, so a single small texture carries both colours. AccuWeather's logo and name are AccuWeather's trademarks.
 
 ## Everybody Votes Channel extras
 
