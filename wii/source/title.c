@@ -311,6 +311,34 @@ static uint8_t *make_content(const pdb_target_t *t, const uint8_t *app, uint32_t
     return packed;
 }
 
+/* Writes content 1 and the TMD. If that fails half way, WiiLink's clean copy goes back in.
+ * NAND_OK, or with err: NAND_UNTOUCHED (the channel is as it was), 1 (the clean copy was put
+ * back) or NAND_DAMAGED (it couldn't be). */
+static int write_pair(const char *appp, const uint8_t *app, uint32_t an, const char *tmdp, const uint8_t *tmd,
+                      uint32_t tn, const uint8_t *clean_app, uint32_t cn, const uint8_t *clean_tmd, uint32_t ctn,
+                      char *err, int errsz)
+{
+    int r = nand_replace(appp, app, an);
+    if (r == NAND_OK) {
+        r = nand_replace(tmdp, tmd, tn);
+        if (r == NAND_OK)
+            return NAND_OK;
+    } else if (r == NAND_UNTOUCHED) {
+        snprintf(err, (size_t)errsz, "Couldn't write to the NAND (%s). The channel wasn't changed.", nand_why());
+        return NAND_UNTOUCHED;
+    }
+    char first[96];
+    snprintf(first, sizeof(first), "%s", nand_why());
+    bool back = nand_replace(appp, clean_app, cn) == NAND_OK && nand_replace(tmdp, clean_tmd, ctn) == NAND_OK;
+    if (back) {
+        snprintf(err, (size_t)errsz, "Writing to the NAND failed (%s). WiiLink's clean copy was put back.", first);
+        return 1;
+    }
+    snprintf(err, (size_t)errsz, "Writing to the NAND failed (%s) and the clean copy couldn't be put back: "
+             "choose Restore, or install the channel's WAD again.", first);
+    return NAND_DAMAGED;
+}
+
 static bool patch_nand(title_t *tt, uint32_t mask, say_fn say, pct_fn pct, char *err, int errsz)
 {
     const pdb_target_t *t = tt->t;
@@ -360,18 +388,29 @@ static bool patch_nand(title_t *tt, uint32_t mask, say_fn say, pct_fn pct, char 
     say("Patching...");
     uint32_t cn = 0;
     uint8_t *content = make_content(t, app, mask, &cn, say, pct, err, errsz);
-    free(app);
-    if (!content) {
-        free(tmd);
-        return false;
+    uint8_t *clean_tmd = content ? malloc(tn) : NULL;
+    if (!clean_tmd) {
+        free(app), free(content), free(tmd);
+        return err[0] ? false : E("Out of memory");
     }
+    memcpy(clean_tmd, tmd, tn);
     sha1_of(content, cn, h);
-    bool ok = tmd_set_content(tmd, tn, 1, cn, h);
+    if (!tmd_set_content(tmd, tn, 1, cn, h)) {
+        free(app), free(content), free(tmd), free(clean_tmd);
+        return E("Couldn't update the TMD");
+    }
     say("Writing to the NAND...");
-    ok = ok && nand_replace(appp, content, cn) && nand_replace(tmdp, tmd, tn);
-    free(content), free(tmd);
-    if (!ok)
-        return E("Writing to the NAND failed. Restore the clean copy from the backup.");
+    int w = write_pair(appp, content, cn, tmdp, tmd, tn, app, an, clean_tmd, tn, err, errsz);
+    free(app), free(content), free(tmd), free(clean_tmd);
+    if (w == 1) {                       /* clean again */
+        tt->state = ST_CLEAN;
+        tt->mask = pdb_default_mask(t);
+        char p2[200];
+        bpath(tt, "applied.txt", p2, sizeof(p2));
+        remove(p2);
+    }
+    if (w != NAND_OK)
+        return false;
     write_applied(tt, mask);
     tt->state = ST_PATCHED;
     tt->mask = mask;
@@ -437,7 +476,8 @@ static bool patch_sd(title_t *tt, uint32_t mask, const sd_keys_t *k, say_fn say,
             snprintf(err, (size_t)errsz, "Couldn't replace content.bin");
     }
     if (ok && nand_exists(nandtmd))
-        ok = nand_replace(nandtmd, tmd, s.tmd_n) || E("Couldn't write the TMD on the NAND");
+        ok = nand_replace(nandtmd, tmd, s.tmd_n) == NAND_OK ||
+             E("content.bin was patched, but the TMD on the NAND couldn't be written (%s): choose Restore", nand_why());
     free(content), free(tmd);
     sdbin_close(&s);
     if (!ok)
@@ -475,10 +515,10 @@ bool title_restore(title_t *tt, const sd_keys_t *keys, say_fn say, char *err, in
         char nandtmd[96];
         snprintf(nandtmd, sizeof(nandtmd), "/title/%08x/%08x/content/title.tmd", (unsigned)(tt->tid >> 32),
                  (unsigned)tt->tid);
-        bool ok = !tmd || nand_replace(nandtmd, tmd, tn);
+        bool ok = !tmd || nand_replace(nandtmd, tmd, tn) == NAND_OK;
         free(tmd);
         if (!ok)
-            return E("Couldn't write the TMD back to the NAND");
+            return E("content.bin is back, but the TMD on the NAND couldn't be written (%s)", nand_why());
     } else {
         uint32_t tn = 0, an = 0;
         bpath(tt, "title.tmd", p, sizeof(p));
@@ -495,10 +535,13 @@ bool title_restore(title_t *tt, const sd_keys_t *keys, say_fn say, char *err, in
         char tmdp[96], appp[96];
         nand_paths(tt, &r, tmdp, appp);
         say("Writing the clean copy to the NAND...");
-        bool ok = nand_replace(appp, app, an) && nand_replace(tmdp, tmd, tn);
+        int w = nand_replace(appp, app, an);
+        if (w == NAND_OK)
+            w = nand_replace(tmdp, tmd, tn);
         free(tmd), free(app);
-        if (!ok)
-            return E("Writing to the NAND failed");
+        if (w != NAND_OK)
+            return E("Writing to the NAND failed (%s)%s", nand_why(),
+                     w == NAND_UNTOUCHED ? "" : ". Choose Restore again, or install the channel's WAD again.");
     }
     (void)keys;
     bpath(tt, "applied.txt", p, sizeof(p));

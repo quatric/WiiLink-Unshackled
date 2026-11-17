@@ -48,8 +48,10 @@ The AccuWeather banner (`build.py --accuweather`) isn't in the app yet.
   before writing), or left unpacked where WiiLink left it unpacked.
 * The TMD gets content 1's new size and SHA-1 and is fakesigned, as for any homebrew channel; the System Menu launches
   fakesigned channels as they are.
-* NAND files are written to `/tmp`, read back, then moved into place with the old file's owner and permissions. Only
-  the channel's own content 1 and `title.tmd` are touched.
+* NAND files are written to `/tmp/wlu.tmp` (IOS takes file names of 12 characters at most), read back, then moved
+  into place with the old file's owner and permissions, and read back again. Only the channel's own content 1 and
+  `title.tmd` are touched. If writing fails half way, WiiLink's clean copy is put back, and the message says which
+  of the two happened (and the NAND error).
 
 ### Channels on the SD card
 

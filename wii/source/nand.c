@@ -8,6 +8,11 @@
 #define CHUNK 0x20000
 
 static bool up;
+static char why[96];
+
+const char *nand_why(void) { return why; }
+
+#define WHY(...) snprintf(why, sizeof(why), __VA_ARGS__)
 
 bool nand_init(void)
 {
@@ -63,64 +68,94 @@ bool nand_exists(const char *path)
 static bool write_new(const char *path, const uint8_t *data, uint32_t n, u8 attr, u8 op, u8 gp, u8 xp)
 {
     ISFS_Delete(path);
-    if (ISFS_CreateFile(path, attr, op, gp, xp) < 0)
+    s32 r = ISFS_CreateFile(path, attr, op, gp, xp);
+    if (r < 0) {
+        WHY("creating %s: error %d", path, (int)r);
         return false;
+    }
     s32 fd = ISFS_Open(path, ISFS_OPEN_WRITE);
-    if (fd < 0)
+    if (fd < 0) {
+        WHY("opening %s: error %d", path, (int)fd);
+        ISFS_Delete(path);
         return false;
+    }
     uint8_t *bounce = memalign(32, CHUNK);
     bool ok = bounce != NULL;
     for (uint32_t done = 0; ok && done < n;) {
         uint32_t c = n - done > CHUNK ? CHUNK : n - done;
         memcpy(bounce, data + done, c);
-        ok = ISFS_Write(fd, bounce, c) == (s32)c;
+        s32 w = ISFS_Write(fd, bounce, c);
+        ok = w == (s32)c;
+        if (!ok)
+            WHY("writing %s: error %d", path, (int)w);
         done += c;
     }
     free(bounce);
-    ISFS_Close(fd);
+    if (ok && ISFS_Close(fd) < 0) {
+        WHY("closing %s", path);
+        ok = false;
+    } else if (!ok) {
+        ISFS_Close(fd);
+    }
     if (!ok)
         ISFS_Delete(path);
     return ok;
 }
 
-bool nand_replace(const char *path, const uint8_t *data, uint32_t n)
+/* true when `path` holds exactly `data` */
+static bool same_as(const char *path, const uint8_t *data, uint32_t n)
 {
-    static char tmp[64] ATTRIBUTE_ALIGN(32);
+    uint32_t back_n = 0;
+    uint8_t *back = nand_read(path, &back_n);
+    bool same = back && back_n == n && !memcmp(back, data, n);
+    free(back);
+    return same;
+}
+
+int nand_replace(const char *path, const uint8_t *data, uint32_t n)
+{
+    /* NAND file names are 12 characters at most (IOS refuses longer ones; Dolphin doesn't) */
+    static const char tmp[] ATTRIBUTE_ALIGN(32) = "/tmp/wlu.tmp";
     u32 owner = 0;
     u16 group = 0;
     u8 attr = 0, op = 3, gp = 3, xp = 1;
-    char dir[128];
-    snprintf(dir, sizeof(dir), "%s", path);
-    char *slash = strrchr(dir, '/');
-    if (!slash)
-        return false;
-    if (ISFS_GetAttr(path, &owner, &group, &attr, &op, &gp, &xp) < 0) {
-        *slash = 0;                     /* a new file: the folder's owner */
+    bool exists = ISFS_GetAttr(path, &owner, &group, &attr, &op, &gp, &xp) >= 0;
+    if (!exists) {                      /* a new file: the folder's owner */
+        char dir[128];
+        snprintf(dir, sizeof(dir), "%s", path);
+        char *slash = strrchr(dir, '/');
+        if (!slash)
+            return NAND_UNTOUCHED;
+        *slash = 0;
         if (ISFS_GetAttr(dir, &owner, &group, &attr, &op, &gp, &xp) < 0)
-            return false;
+            return NAND_UNTOUCHED;
         attr = 0, op = 3, gp = 3, xp = 1;
     }
-    snprintf(tmp, sizeof(tmp), "/tmp/wlu-%s", strrchr(path, '/') + 1);
-    if (!write_new(tmp, data, n, attr, op, gp, xp))
-        return false;
-    /* check what was written */
-    uint32_t back_n = 0;
-    uint8_t *back = nand_read(tmp, &back_n);
-    bool same = back && back_n == n && !memcmp(back, data, n);
-    free(back);
-    if (!same) {
+    why[0] = 0;
+    if (!write_new(tmp, data, n, attr, op, gp, xp) || !same_as(tmp, data, n)) {
+        if (!why[0])
+            WHY("%s reads back wrong", tmp);
         ISFS_Delete(tmp);
-        return false;
+        return NAND_UNTOUCHED;
     }
-    ISFS_SetAttr(tmp, owner, group, attr, op, gp, xp);
-    ISFS_Delete(path);
-    if (ISFS_Rename(tmp, path) < 0) {
-        /* rename refused: write it in place instead */
-        bool ok = write_new(path, data, n, attr, op, gp, xp);
+    s32 r;
+    if (exists && (r = ISFS_Delete(path)) < 0) {
+        WHY("removing %s: error %d (NAND permissions not patched?)", path, (int)r);
         ISFS_Delete(tmp);
-        if (ok)
-            ISFS_SetAttr(path, owner, group, attr, op, gp, xp);
-        return ok;
+        return NAND_UNTOUCHED;
     }
-    return true;
+    bool ok;
+    if (ISFS_Rename(tmp, path) >= 0) {
+        ok = same_as(path, data, n);
+        if (!ok)
+            WHY("%s reads back wrong", path);
+    } else {                            /* rename refused: write it in place instead */
+        ok = write_new(path, data, n, attr, op, gp, xp) && same_as(path, data, n);
+        if (!ok && !why[0])
+            WHY("%s reads back wrong", path);
+        ISFS_Delete(tmp);
+    }
+    if (ok)
+        ISFS_SetAttr(path, owner, group, attr, op, gp, xp);
+    return ok ? NAND_OK : NAND_DAMAGED;
 }
