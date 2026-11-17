@@ -1,6 +1,6 @@
 # WiiLink-Unshackled
 
-Adds Classic Controller and GameCube controller support to WiiLink's USA channels and to the Photo Channel:
+Adds Classic Controller and GameCube controller support to WiiLink's channels and to the Photo Channel:
 
 | Channel | Title | Main DOL (content 1) |
 |---|---|---|
@@ -10,6 +10,13 @@ Adds Classic Controller and GameCube controller support to WiiLink's USA channel
 | Check Mii Out Channel | HAPE | 3,410,240 bytes |
 | Nintendo Channel | HATE | 3,988,896 bytes |
 | Photo Channel 1.1 | HAYA | 2,300,448 bytes |
+| Food Channel (Standard, Domino's, Just Eat) / Demae Channel | HCHJ | 3,709,084 or 3,722,036 bytes |
+| Digicam Print Channel / Photo Prints Channel | HCDJ | 3,303,168 bytes |
+| Today and Tomorrow Channel (Japan) | HAVJ | 4,247,616 bytes |
+| Today and Tomorrow Channel (PAL) | HAVP | 3,384,512 bytes |
+| Wii no Ma / Wii Room (every language) | HCIJ | 8,929,568 bytes |
+
+Sizes are for the uncompressed DOL. Most of these WADs store content 1 LZ-compressed; `build.py` unpacks it and writes the patched DOL back uncompressed (the boot program loads either).
 
 ```
 python3 build.py wad "<channel> (USA) (WiiLink).wad" out.wad [--clock] [--accuweather]
@@ -78,6 +85,8 @@ The channel's text-input library is an early build of the SDK's SoftwareKeyboard
 * **GameCube pad alone:** works with no Wii Remote connected. KPAD sees it as a Classic Controller on channel 0.
 * **GameCube pad with a Wii Remote:** the pad acts as the remote's extension. A real Nunchuk or Classic Controller takes priority.
 * **The remote's own pointer:** IR pointing and twist still work. Whichever input moved last is in control.
+* **Per-channel pointer range:** Food/Demae and Wii no Ma / Wii Room put the screen edge at pos x = ±1 on any TV, so their stick range is ±1 there (profile `pointer`).
+* **Pointers that must keep moving:** Today and Tomorrow hides a pointer whose position stops changing (a real one never stops dead), and Wii Room's buttons react to movement. For those channels (`pointer_vec`), the stick pointer also reports its velocity, and while it's still it wobbles by an invisible 0.0005.
 
 ## How it works
 
@@ -93,19 +102,30 @@ Five hooks branch out of KPAD/WPAD:
 
 The code and 0x200 bytes of state take the first 0x1800 bytes of the OS arena (0x2000 in the Nintendo and Everybody Votes Channels). The state is split into 0x00 for gc.c, 0x40 for motion.c and 0x100 for kbd.c. That's `__ArenaLo`, right above the debugger stack. OSInit's arena constants (each a `lis`/`addi` pair) move up past it, so the game never allocates over it.
 
+Wii no Ma / Wii Room needs two exceptions:
+
+* **Text slot:** code in a data section doesn't run under its boot program, so the hook section goes in the first free text slot (slot 2, `text_slot`). Its bytes are inserted into the stream between text slot 1 and data slot 7.
+* **Arena guard:** its OS writes the 0x800 bytes just below `__ArenaLo`, which the original layout leaves unused. The arena therefore starts 0x2000 past the hooks (`arena_guard`).
+
 ### The boot loader packs sections
 
 WiiLink's NAND boot program (content `0xb`) ignores DOL file offsets. It streams sections back to back from file offset `0x100`, text slots 0–6 then data slots 7–17.
 
-The hook section therefore takes the last slot (data 17), and its bytes start exactly where the previous section ends. If a section is aligned or out of order, it loads another section's bytes, and OSInit crashes.
+The hook section therefore takes the last slot (data 17), and its bytes start exactly where the previous section ends (Wii no Ma: text slot 2, see above). If a section is aligned or out of order, it loads another section's bytes, and OSInit crashes.
 
 ### Two SDK versions
 
-Forecast, News, Everybody Votes and Check Mii Out share the June 2007 SDK. The Nintendo Channel uses a 2009 KPAD, built with `-DSDK2009`:
+Forecast, News, Everybody Votes, Check Mii Out and Today and Tomorrow (Japan) have the 2007 KPAD. The Nintendo Channel uses a 2009 KPAD, built with `-DSDK2009`:
 
 * **Sample ring:** 16 inline slots at `k+0x13C` plus an optional external buffer (`k+0x4BC`/`k+0x4C0`), instead of 16 slots at `k+0x110`.
 * **Sample count:** keeps one already-read sample, so "nothing new" is a count of 1, not 0.
 * **Copy-out:** two sites (MOTION and MOTION2), and the output `KPADStatus` is 0xB0 bytes. The field offsets the hooks use are unchanged.
+
+Later KPADs keep the 2009 code's shape, so they build with `-DSDK2009` too. Each profile passes its differences to `hooks.S` and `gc.c` through `asm_defs`.
+
+* **September 2008** (Photo, Food/Demae, Digicam/Photo Prints): see below.
+* **June 2009** (Today and Tomorrow, PAL): an 8-byte bigger KPAD block (0x578) and a 240-byte KPADiRead frame (`POLL_FRAME`).
+* **August 2010** (Wii no Ma / Wii Room): WPAD samples grow to 0x42 bytes for MotionPlus. The ring moves to `k+0x180` (index/count `k+0x17A`/`k+0x17B`, external buffer `k+0x5A0`/`k+0x5A4`), the format byte moves from `+0x36` to `+0x40`, and the count is used up completely (no kept sample). The output `KPADStatus` is 0xF0 bytes, the block is 0x688 bytes, and WPAD's device type/status move to 2309/2304. Every hook site uses different registers, and OSInit splits the arena start's `lis`/`addi`, so that arena entry is a `(lis, addi)` pair.
 
 The Photo Channel's September 2008 KPAD is the same code with two differences. The per-channel KPAD block is 0x5C0 bytes instead of 0x570, and the copy-out loops use different registers. The profile passes those registers to `hooks.S` through `asm_defs` (`M1_DEST`/`M1_LEFT`, `M2_DEST`/`M2_LEFT`), and the replaced loop words through `site_words`.
 

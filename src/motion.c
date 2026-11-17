@@ -27,6 +27,8 @@ struct mst {
     u32 rep_tb[4];          /* when the held buttons repeat next */
     u8 stick[4];            /* 1: the sticks are in control, 0: the Wii Remote's IR */
     u8 inited;
+    float vx[4], vy[4];     /* stick pointer movement this read (POINTER_VEC) */
+    u8 tick[4];             /* idle wobble phase (POINTER_VEC) */
 };
 #define MST ((volatile struct mst *)(STATE + 0x40))         /* 0x40-0x100 */
 
@@ -212,11 +214,34 @@ void cc_motion(u8 *k, u32 chan, u32 first)
         /* stick up = pointer up (pos y is down-positive) */
         px = clampf(px + lx * step, MST->lim_x);
         py = clampf(py - ly * step, MST->lim_y);
+#ifdef POINTER_VEC
+        MST->vx[chan] = px - MST->px[chan];
+        MST->vy[chan] = py - MST->py[chan];
+#endif
         MST->px[chan] = px;
         MST->py[chan] = py;
     }
     K_F(k, 0x20) = px;
     K_F(k, 0x24) = py;
+#ifdef POINTER_VEC
+    /* vec / speed: KPAD works them out from the IR, so they'd say "not moving".
+     * Today and Tomorrow hides a pointer that stops dead (a real one never
+     * does: KPAD's smoothing keeps it creeping), so a still stick pointer
+     * wobbles by an invisible 0.0005 each read. */
+    {
+        float vx = MST->vx[chan], vy = MST->vy[chan], v2;
+        if (first && vx == 0.0f && vy == 0.0f)
+            MST->tick[chan] ^= 1;
+        if (vx == 0.0f && vy == 0.0f) {
+            vx = MST->tick[chan] ? 0.0005f : -0.0005f;
+            K_F(k, 0x20) = px + (MST->tick[chan] ? 0.0005f : 0.0f);
+        }
+        v2 = vx * vx + vy * vy;
+        K_F(k, 0x28) = vx;
+        K_F(k, 0x2C) = vy;
+        K_F(k, 0x30) = v2 * rsqrt(v2);
+    }
+#endif
     k[0x5E] = 2;                        /* pointer valid */
     if (K_F(k, 0x48) < 0.5f)
         K_F(k, 0x48) = 1.5f;            /* plausible pointer distance (m) */

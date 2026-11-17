@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Classic Controller + GameCube controller patch for WiiLink's USA channels
+"""Classic Controller + GameCube controller patch for WiiLink's channels and the Photo Channel
 (Everybody Votes Channel: also USB keyboard and no daily suggestion limit).
 
   build.py dol <00000001.app in> <00000001.app out> [--clock] [--debug-feed]
@@ -12,7 +12,7 @@ section (last slot) and plants a branch at each hook site.  --clock (Forecast
 and News Channels) also applies forecast_us_clock_patch.py / news_us_clock_patch.py.  --accuweather
 (Forecast Channel, wad mode) swaps the WeatherNews logo on the channel's banner
 and Wii Menu icon for AccuWeather's (banner.py).
-`wad` unpacks with Sharpii, patches content 1, repacks and fakesigns.
+`wad` unpacks with Sharpii, patches content 1 (decompressing it if WiiLink LZ-packed it), repacks and fakesigns.
 
 Mapping (Wii Remote <- Classic Controller / GameCube):
   A <- A / A       B <- B / B       1 <- X / X       2 <- Y / Y
@@ -188,6 +188,146 @@ CHANNELS = {
         'asm_defs': {'M1_DEST': 25, 'M1_LEFT': 24, 'M2_DEST': 27, 'M2_LEFT': 25},
         'clock': None,
     },
+    # The WiiLink WADs below store content 1 LZ-compressed (main_dol() unpacks it).
+    # Food Channel (Standard, Domino's, Just Eat) and Demae Channel: the Photo
+    # Channel's Sept 2008 KPAD, and all three DOLs have the same addresses
+    'food': {
+        'title': "Food / Demae Channel (HCHJ: Standard, Domino's, Just Eat)",
+        'dol_size': [3709084, 3722036],
+        'sdk': 2009,
+        'arena_lo': 0x804865C0, 'stack_end': 0x804845B8, 'lis': 0x8048,
+        'arena': [0x8019A054, 0x8019A0FC, 0x8019A0A4, 0x8019A130],
+        'defs': {
+            'SI_TYPES': 0x803782C8,
+            'SI_BUSY': 0x803782B0,
+            'SI_SHADOW': 0x803782B4,
+            'FN_SIGETTYPE': 0x80238FAC,
+            'FN_OSDISABLE': 0x8019FDB0,
+            'FN_OSRESTORE': 0x8019FDD8,
+            'WPAD_TBL': 0x803C5FD0,
+            'KPAD_BASE': 0x80407080,
+            'KPAD_STRIDE': 0x5C0,
+        },
+        'sites': {'POLL': 0x8022DCC4, 'SAMPLE': 0x8022DE3C, 'PROBE': 0x801AAD64,
+                  'BUTTONS': 0x8022B7C8, 'MOTION': 0x8022E3AC, 'MOTION2': 0x8022E528},
+        'site_words': {'MOTION': 0x3718FFFF, 'MOTION2': 0x3739FFFF},
+        'asm_defs': {'M1_DEST': 25, 'M1_LEFT': 24, 'M2_DEST': 27, 'M2_LEFT': 25},
+        # pos x +-1 is the screen edge here (no 16:9 widening); y clamps at ~0.75 as usual
+        'pointer': {'LIM_X_WIDE': 1.0, 'LIM_X_43': 1.0},
+        'clock': None,
+    },
+    # Digicam Print Channel / Photo Prints Channel: Sept 2008 KPAD
+    'digicam': {
+        'title': 'Digicam Print / Photo Prints Channel (HCDJ)',
+        'dol_size': 3303168,
+        'sdk': 2009,
+        'arena_lo': 0x804B7920, 'stack_end': 0x804B5908, 'lis': 0x804B,
+        'arena': [0x80087A3C, 0x80087AE4, 0x80087A8C, 0x80087B18],
+        'defs': {
+            'SI_TYPES': 0x80303658,
+            'SI_BUSY': 0x80303640,
+            'SI_SHADOW': 0x80303644,
+            'FN_SIGETTYPE': 0x800C000C,
+            'FN_OSDISABLE': 0x8008C1E0,
+            'FN_OSRESTORE': 0x8008C208,
+            'WPAD_TBL': 0x80363910,
+            'KPAD_BASE': 0x8039DE18,
+            'KPAD_STRIDE': 0x5C0,
+        },
+        'sites': {'POLL': 0x80117708, 'SAMPLE': 0x80117880, 'PROBE': 0x800D62DC,
+                  'BUTTONS': 0x8011520C, 'MOTION': 0x80117DF0, 'MOTION2': 0x80117F6C},
+        'site_words': {'MOTION': 0x3718FFFF, 'MOTION2': 0x3739FFFF},
+        'asm_defs': {'M1_DEST': 25, 'M1_LEFT': 24, 'M2_DEST': 27, 'M2_LEFT': 25},
+        'clock': None,
+    },
+    # Today and Tomorrow Channel (Japan): an Aug 2007 KPAD, the same code as June 2007
+    'tt_jp': {
+        'title': 'Today and Tomorrow Channel (Japan, HAVJ)',
+        'dol_size': 4247616,
+        'arena_lo': 0x8056D6E0, 'stack_end': 0x8056B6C8, 'lis': 0x8057,
+        'arena': [0x800E8848, 0x800E88F0, 0x800E8898, 0x800E8924],
+        'defs': {
+            'SI_TYPES': 0x803F9AF0,
+            'SI_BUSY': 0x803F9AD8,
+            'SI_SHADOW': 0x803F9ADC,
+            'FN_SIGETTYPE': 0x8012ADDC,
+            'FN_OSDISABLE': 0x800EECEC,
+            'FN_OSRESTORE': 0x800EED14,
+            'WPAD_TBL': 0x8043F650,
+        },
+        'sites': {'POLL': 0x80182228, 'SAMPLE': 0x80182340, 'PROBE': 0x80141E98,
+                  'BUTTONS': 0x801827F0, 'MOTION': 0x80182924},
+        # shows the pointer only while it moves: give the stick pointer a vec/speed
+        'pointer_vec': True,
+        'clock': None,
+    },
+    # Today and Tomorrow Channel (PAL): a June 2009 KPAD, the Nintendo Channel's
+    # with an 8-byte bigger block and a smaller KPADiRead frame
+    'tt_pal': {
+        'title': 'Today and Tomorrow Channel (PAL, HAVP)',
+        'dol_size': 3384512,
+        'sdk': 2009,
+        'arena_lo': 0x8057A4E0, 'stack_end': 0x805784C8, 'lis': 0x8058,
+        'arena': [0x800EDCBC, 0x800EDD64, 0x800EDD0C, 0x800EDD98],
+        'defs': {
+            'SI_TYPES': 0x80326CB8,
+            'SI_BUSY': 0x80326CA0,
+            'SI_SHADOW': 0x80326CA4,
+            'FN_SIGETTYPE': 0x80130990,
+            'FN_OSDISABLE': 0x800F4470,
+            'FN_OSRESTORE': 0x800F44B0,
+            'WPAD_TBL': 0x8044CC30,
+            'KPAD_BASE': 0x80487138,
+            'KPAD_STRIDE': 0x578,
+        },
+        'sites': {'POLL': 0x80189AD0, 'SAMPLE': 0x80189C3C, 'PROBE': 0x80147E70,
+                  'BUTTONS': 0x80187454, 'MOTION': 0x80189FE4, 'MOTION2': 0x8018A154},
+        'site_words': {'POLL': 0x9421FF10},
+        'asm_defs': {'POLL_FRAME': 240},
+        'pointer_vec': True,
+        'clock': None,
+    },
+    # Wii no Ma / Wii Room (all languages): an Aug 2010 KPAD.  Same flow as 2009,
+    # but MotionPlus-sized samples (0x42 bytes) move the ring, the KPADStatus
+    # output is 0xF0 bytes, and the registers are all different.
+    'wiinoma': {
+        'title': 'Wii no Ma / Wii Room (HCIJ)',
+        'dol_size': 8929568,
+        'sdk': 2009,
+        'arena_lo': 0x809A2C20, 'stack_end': 0x809A0C20, 'lis': 0x809A,
+        # the OS writes the 0x800 bytes below __ArenaLo: keep the original gap free
+        'arena_guard': 0x2000,
+        'text_slot': True,
+        # OSInit keeps the arena start in r29 (lis/addi split by other code),
+        # and builds the debugger stack end twice
+        'arena': [(0x802D0538, 0x802D0540), 0x802D06A4, 0x802D072C],
+        'defs': {
+            'SI_TYPES': 0x80832238,
+            'SI_BUSY': 0x80832220,
+            'SI_SHADOW': 0x80832224,
+            'FN_SIGETTYPE': 0x802E22B0,
+            'FN_OSDISABLE': 0x802D6E10,
+            'FN_OSRESTORE': 0x802D6E50,
+            'WPAD_TBL': 0x808B88B0,
+            'KPAD_BASE': 0x808BEA68,
+            'KPAD_STRIDE': 0x688,
+        },
+        'sites': {'POLL': 0x803303E0, 'SAMPLE': 0x80330584, 'PROBE': 0x80319900,
+                  'BUTTONS': 0x8032D3B4, 'MOTION': 0x803308CC, 'MOTION2': 0x80330A8C},
+        'site_words': {'POLL': 0x9421FDC0,        # stwu r1,-576(r1)
+                       'SAMPLE': 0x8815017B,      # lbz r0,0x17B(r21)
+                       'BUTTONS': 0x70C09FFF,     # andi. r0,r6,0x9FFF (r9 is live)
+                       'MOTION': 0x3673FFFF,      # addic. r19,r19,-1
+                       'MOTION2': 0x36D6FFFF},    # addic. r22,r22,-1
+        'asm_defs': {'POLL_FRAME': 576, 'K_BLK': 21, 'BTN_TMP': 0, 'M_TOTAL': 29,
+                     'M1_DEST': 18, 'M1_LEFT': 19, 'M2_DEST': 19, 'M2_LEFT': 22,
+                     'K_IDX': 0x17A, 'K_CNT': 0x17B, 'K_FRESH': 0, 'K_RING': 0x180,
+                     'K_EXTP': 0x5A0, 'K_EXTN': 0x5A4, 'K_SLOT': 0x42, 'S_FMT': 0x40,
+                     'WPAD_TYPE': 2309, 'WPAD_STATUS': 2304},
+        'pointer': {'LIM_X_WIDE': 1.0, 'LIM_X_43': 1.0},
+        'pointer_vec': True,
+        'clock': None,
+    },
 }
 HOOK_SIZE = 0x1800              # default: code + state, carved from the arena start
 STATE_SIZE = 0x200             # gc.c 0x00-0x40, motion.c 0x40-0x100, kbd.c 0x100-0x200
@@ -226,11 +366,16 @@ def site_addr(ch, name):
 
 
 def layout(ch):
-    """BASE/END/STATE and the four arena patches (addi address, old lo, new hi, new lo).
-    Each addi is preceded by the lis it pairs with; that lis moves too if END
-    needs a different high half."""
+    """BASE/END/STATE and the arena patches (lis address, addi address, old los, new hi, new lo).
+    Each arena entry is an addi address (its lis right before it) or a (lis, addi)
+    pair; the addi builds either __ArenaLo or the debugger stack end, and both
+    move up to END (the lis too if END needs a different high half).
+    'arena_guard' leaves that many bytes free between the hooks and END: the
+    2010 OS uses the space right below __ArenaLo as scratch (the original
+    layout has an unused gap there)."""
     base = ch['arena_lo']
-    end = base + ch.get('hook_size', HOOK_SIZE)
+    top = base + ch.get('hook_size', HOOK_SIZE)        # code + state end here
+    end = top + ch.get('arena_guard', 0)
     assert end % 32 == 0
     def lo(v):
         d = v - (ch['lis'] << 16)
@@ -238,18 +383,61 @@ def layout(ch):
         return d & 0xFFFF
     hi = ((end + 0x8000) >> 16) & 0xFFFF
     arena = []
-    for i, a in enumerate(ch['arena']):
-        old_lo = lo(base) if i < 2 else lo(ch['stack_end'])
-        arena.append((a, old_lo, hi, end & 0xFFFF))
-    return base, end, end - STATE_SIZE, arena
+    for a in ch['arena']:
+        lis_a, addi_a = a if isinstance(a, tuple) else (a - 4, a)
+        arena.append((lis_a, addi_a, (lo(base), lo(ch['stack_end'])), hi, end & 0xFFFF))
+    return base, end, top - STATE_SIZE, arena
+
+
+def dol_sizes(ch):
+    return ch['dol_size'] if isinstance(ch['dol_size'], list) else [ch['dol_size']]
 
 
 def detect(data):
     for key, ch in CHANNELS.items():
-        if len(data) == ch['dol_size']:
+        if len(data) in dol_sizes(ch):
             return key, ch
     raise SystemExit('unknown main DOL (%d bytes); supported: %s' % (
-        len(data), ', '.join('%s (%d)' % (c['title'], c['dol_size']) for c in CHANNELS.values())))
+        len(data), ', '.join('%s (%s)' % (c['title'], '/'.join(map(str, dol_sizes(c)))) for c in CHANNELS.values())))
+
+
+def lz_decompress(d):
+    """Nintendo LZ77 (type 0x10 / 0x11), as WiiLink stores most main DOLs."""
+    t, n, p = d[0], d[1] | d[2] << 8 | d[3] << 16, 4
+    if n == 0:
+        n, p = struct.unpack('<I', d[4:8])[0], 8
+    o = bytearray()
+    while len(o) < n:
+        f = d[p]
+        p += 1
+        for b in range(8):
+            if len(o) >= n:
+                break
+            if not f & (0x80 >> b):
+                o.append(d[p])
+                p += 1
+                continue
+            a = d[p]
+            if t == 0x10:
+                ln, disp, p = (a >> 4) + 3, ((a & 15) << 8 | d[p + 1]) + 1, p + 2
+            elif a >> 4 == 0:
+                ln, disp, p = ((a & 15) << 4 | d[p + 1] >> 4) + 0x11, ((d[p + 1] & 15) << 8 | d[p + 2]) + 1, p + 3
+            elif a >> 4 == 1:
+                ln = ((a & 15) << 12 | d[p + 1] << 4 | d[p + 2] >> 4) + 0x111
+                disp, p = ((d[p + 2] & 15) << 8 | d[p + 3]) + 1, p + 4
+            else:
+                ln, disp, p = (a >> 4) + 1, ((a & 15) << 8 | d[p + 1]) + 1, p + 2
+            for _ in range(ln):
+                o.append(o[-disp])
+    return bytes(o)
+
+
+def main_dol(data):
+    """content 1 as a DOL: WiiLink LZ-compresses most (the NAND boot program
+    takes either), so unpack those"""
+    if data[0] in (0x10, 0x11) and data[:4] != b'\0\0\1\0':
+        return lz_decompress(data)
+    return data
 
 
 CFLAGS = ['-O2', '-mcpu=750', '-mbig-endian', '-msdata=none', '-ffreestanding', '-fno-pic', '-fno-builtin',
@@ -271,6 +459,8 @@ def build_blob(ch, base, state, debug_feed=False):
     if ch.get('sdk', 2007) == 2009:
         D.append('-DSDK2009')
     D += ['-D%s=%d' % kv for kv in ch.get('asm_defs', {}).items()]
+    # pointer range (KPAD pos at the screen edges), where it isn't the Forecast Channel's
+    D += ['-D%s=%.4ff' % kv for kv in ch.get('pointer', {}).items()]
     if 'kbd' in ch:
         D.append('-DKBD')
     if debug_feed:
@@ -279,6 +469,8 @@ def build_blob(ch, base, state, debug_feed=False):
         D.append('-DREPEAT_MASK=0x%04Xu' % ch['repeat'])
     if 'sympatches' in ch:
         D.append('-DTILT')
+    if ch.get('pointer_vec'):
+        D.append('-DPOINTER_VEC')
     D += os.environ.get('HOOK_CFLAGS', '').split()     # test builds
     objs = [tmp + '/hooks.o', tmp + '/gc.o', tmp + '/motion.o']
     run([CC + 'gcc'] + CFLAGS + ['-msoft-float'] + D + ['-c', src + '/gc.c', '-o', tmp + '/gc.o'])
@@ -342,10 +534,12 @@ class Dol:
         o = self.off(addr)
         self.d[o:o + 4] = struct.pack('>I', w)
 
-    def add_text(self, addr, payload):
+    def add_text(self, addr, payload, text_slot=False):
         for i, o, a, s in self.sections():
             if s and a < addr + len(payload) and addr < a + s:
                 raise SystemExit('section %d (0x%08X-0x%08X) overlaps the hook section' % (i, a, a + s))
+        if text_slot:
+            return self.insert_text(addr, payload)
         # The NAND boot program ignores the file offsets: it streams the sections
         # back to back from 0x100, text slots 0-6 then data slots 7-17.  So the
         # new section takes the last slot (shifting used data slots down by one
@@ -377,6 +571,33 @@ class Dol:
         self.set(0x90, slot, len(payload))
         return slot
 
+    def insert_text(self, addr, payload):
+        """Put the section in the first free text slot after the used ones.  The
+        boot program loads text sections as code (data sections are only
+        copied), so this is for channels where code in a data section doesn't
+        run.  The bytes go in the stream between that slot's neighbours."""
+        used = [i for i in range(7) if self.field(0x90, i)]
+        slot = max(used) + 1
+        if slot > 6:
+            raise SystemExit('no free text section slot')
+        live = sorted((self.field(0, i), self.field(0x90, i), i) for i in range(18) if self.field(0x90, i))
+        off = 0x100
+        for o, sz, i in live:
+            if o != off:
+                raise SystemExit('DOL sections are not packed back to back (0x%X != 0x%X)' % (o, off))
+            off += sz
+        if [i for _, _, i in live] != sorted(i for _, _, i in live):
+            raise SystemExit('DOL sections are not in slot order')
+        at = 0x100 + sum(sz for _, sz, i in live if i < slot)
+        for _, _, i in live:
+            if i > slot:
+                self.set(0, i, self.field(0, i) + len(payload))
+        self.d = self.d[:at] + payload + self.d[at:]
+        self.set(0, slot, at)
+        self.set(0x48, slot, addr)
+        self.set(0x90, slot, len(payload))
+        return slot
+
 
 def patch_dol(data, clock=False, debug_feed=False):
     key, ch = detect(data)
@@ -401,14 +622,14 @@ def patch_dol(data, clock=False, debug_feed=False):
         if cur != orig:
             raise SystemExit('%s site 0x%08X: found 0x%08X, want 0x%08X (already patched?)' % (
                 name, site_addr(ch, name), cur, orig))
-    for addr, old_lo, new_hi, new_lo in arena:
+    for lis_a, addr, old_los, new_hi, new_lo in arena:
         cur = dol.word(addr)
-        if cur & 0xFFFF != old_lo or cur >> 26 != 14:
+        if cur & 0xFFFF not in old_los or cur >> 26 != 14:
             raise SystemExit('arena site 0x%08X: found 0x%08X' % (addr, cur))
-        lis = dol.word(addr - 4)            # lis rA,hi right before addi rD,rA,lo
+        lis = dol.word(lis_a)               # lis rA,hi that addi rD,rA,lo pairs with
         if lis >> 26 != 15 or (lis >> 16) & 31 or (lis >> 21) & 31 != (cur >> 16) & 31 or lis & 0xFFFF != ch['lis']:
-            raise SystemExit('arena site 0x%08X: no matching lis before it (0x%08X)' % (addr, lis))
-        dol.put(addr - 4, (lis & 0xFFFF0000) | new_hi)
+            raise SystemExit('arena site 0x%08X: no matching lis at 0x%08X (0x%08X)' % (addr, lis_a, lis))
+        dol.put(lis_a, (lis & 0xFFFF0000) | new_hi)
         dol.put(addr, (cur & 0xFFFF0000) | new_lo)
     for addr, old, new, what in ch.get('patches', []):
         for j, (o, n) in enumerate(zip(old, new)):
@@ -424,8 +645,8 @@ def patch_dol(data, clock=False, debug_feed=False):
         dol.put(lis_a, (lis & 0xFFFF0000) | ((v + 0x8000) >> 16 & 0xFFFF))
         dol.put(addi_a, (addi & 0xFFFF0000) | (v & 0xFFFF))
         print('  patched 0x%08X/0x%08X: -> %s 0x%08X' % (lis_a, addi_a, sym, v))
-    payload = blob + b'\0' * (end - base - len(blob))           # code, then zeroed state up to END
-    slot = dol.add_text(base, payload)
+    payload = blob + b'\0' * (state + STATE_SIZE - base - len(blob))   # code, then zeroed state
+    slot = dol.add_text(base, payload, ch.get('text_slot', False))
     only = os.environ.get('HOOKS')            # debugging: HOOKS=POLL,SAMPLE plants only those
     for name, (orig, stub) in sites(ch).items():
         if only is not None and name not in only.split(','):
@@ -434,7 +655,7 @@ def patch_dol(data, clock=False, debug_feed=False):
         dol.put(site, b_to(site, syms[stub]))
         print('  %-8s 0x%08X -> %-13s 0x%08X' % (name, site, stub, syms[stub]))
     print('hook section: DOL slot %d, 0x%08X-0x%08X (%d bytes code, state at 0x%08X); arena now starts at 0x%08X' % (
-        slot, base, end, len(blob), state, end))
+        slot, base, base + len(payload), len(blob), state, end))
     return bytes(dol.d)
 
 
@@ -466,15 +687,16 @@ def main():
     if mode == 'dol':
         if accu:
             raise SystemExit('--accuweather needs wad mode (the banner is content 0)')
-        patched = patch_dol(open(src, 'rb').read(), clock, feed)
+        patched = patch_dol(main_dol(open(src, 'rb').read()), clock, feed)
         open(dst, 'wb').write(patched)
         return
     tmp = tempfile.mkdtemp(prefix='fcwad')
     run([SHARPII, 'WAD', '-u', src, tmp + '/u'])
     app = tmp + '/u/00000001.app'
-    if accu and detect(open(app, 'rb').read())[0] != 'forecast':
+    main = main_dol(open(app, 'rb').read())
+    if accu and detect(main)[0] != 'forecast':
         raise SystemExit('--accuweather is only for the Forecast Channel')
-    patched = patch_dol(open(app, 'rb').read(), clock, feed)
+    patched = patch_dol(main, clock, feed)
     open(app, 'wb').write(patched)
     if accu:
         sys.path.insert(0, HERE)

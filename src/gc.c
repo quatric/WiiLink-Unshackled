@@ -18,6 +18,18 @@ typedef signed short s16;
 typedef unsigned char u8;
 
 #define R32(a) (*(volatile u32 *)(a))
+
+/* layout overrides for later SDKs (build.py 'asm_defs'): WPAD sample format
+ * byte, WPAD control block's device type and status */
+#ifndef S_FMT
+#define S_FMT 0x36
+#endif
+#ifndef WPAD_TYPE
+#define WPAD_TYPE 2241
+#endif
+#ifndef WPAD_STATUS
+#define WPAD_STATUS 2236
+#endif
 #define SI_OUT0   (0xCD006400u)
 #define SI_IN0H   (0xCD006404u)
 #define SI_IN0L   (0xCD006408u)
@@ -182,32 +194,54 @@ static __attribute__((noinline)) void fill_cc(u8 *s, u32 h, u32 l, u32 b)
     s[0x35] = 0;
     s[0x28] = 2;                             /* extension: Classic Controller */
     s[0x29] = 0;                             /* no error */
-    s[0x36] = 8;                             /* format: classic + accel + pointer */
+    s[S_FMT] = 8;                            /* format: classic + accel + pointer */
 }
 
-/* KPAD's sample ring (0x38-byte WPAD samples) in the per-channel KPAD block k:
- *   2007 SDK: 16 slots at k+0x110, write index k+0x10E, count k+0x10F
- *   2009 SDK: 16 slots at k+0x13C plus an optional external buffer
+/* KPAD's sample ring (WPAD samples) in the per-channel KPAD block k:
+ *   2007 SDK: 16 0x38-byte slots at k+0x110, write index k+0x10E, count k+0x10F
+ *   2009 SDK: 16 0x38-byte slots at k+0x13C plus an optional external buffer
  *             (pointer k+0x4BC, extra slots k+0x4C0); write index k+0x13A,
- *             count k+0x13B, and the count keeps one already-read sample */
+ *             count k+0x13B, and the count keeps one already-read sample
+ *   2010 KPAD (Wii no Ma): the 2009 layout with 0x42-byte samples (the format
+ *             byte moved from +0x36 to +0x40) and everything after them moved
+ *             up; the count is used up completely.  build.py passes these. */
 #ifdef SDK2009
+#ifndef K_IDX
 #define K_IDX   0x13A
+#endif
+#ifndef K_CNT
 #define K_CNT   0x13B
+#endif
+#ifndef K_FRESH
 #define K_FRESH 1                               /* count when nothing new is queued */
+#endif
+#ifndef K_RING
+#define K_RING  0x13C
+#endif
+#ifndef K_EXTP
+#define K_EXTP  0x4BC
+#endif
+#ifndef K_EXTN
+#define K_EXTN  0x4C0
+#endif
+#ifndef K_SLOT
+#define K_SLOT  0x38
+#endif
 static inline u32 ring_len(u8 *k)
 {
-    return 16 + *(volatile u32 *)(k + 0x4C0);
+    return 16 + *(volatile u32 *)(k + K_EXTN);
 }
 static inline u8 *ring_slot(u8 *k, u32 i)
 {
     if (i < 16)
-        return k + 0x13C + i * 0x38;
-    return *(u8 *volatile *)(k + 0x4BC) + (i - 16) * 0x38;
+        return k + K_RING + i * K_SLOT;
+    return *(u8 *volatile *)(k + K_EXTP) + (i - 16) * K_SLOT;
 }
 #else
 #define K_IDX   0x10E
 #define K_CNT   0x10F
 #define K_FRESH 0
+#define K_SLOT  0x38
 static inline u32 ring_len(u8 *k)
 {
     (void)k;
@@ -215,18 +249,23 @@ static inline u32 ring_len(u8 *k)
 }
 static inline u8 *ring_slot(u8 *k, u32 i)
 {
-    return k + 0x110 + i * 0x38;
+    return k + 0x110 + i * K_SLOT;
 }
 #endif
 
 static __attribute__((noinline)) void put_sample(u8 *k, u32 idx, u32 h, u32 l, u32 b)
 {
-    volatile u32 *p = (volatile u32 *)ring_slot(k, idx % ring_len(k));
+    u8 *s = ring_slot(k, idx % ring_len(k));
     u32 i;
 
-    for (i = 0; i < 0x38 / 4; i++)
-        p[i] = 0;
-    fill_cc((u8 *)p, h, l, b);
+#if K_SLOT % 4
+    for (i = 0; i < K_SLOT / 2; i++)            /* 0x42-byte slots are only 2-aligned */
+        ((volatile u16 *)s)[i] = 0;
+#else
+    for (i = 0; i < K_SLOT / 4; i++)
+        ((volatile u32 *)s)[i] = 0;
+#endif
+    fill_cc(s, h, l, b);
 }
 
 void gc_sample(u8 *k, u32 chan)
@@ -279,8 +318,8 @@ u32 gc_probe(u32 chan, u32 *type)
     if (chan || !gc_in(&h, &l))
         return 0;
     blk = *(u8 **)(WPAD_TBL + chan * 4);
-    t = blk[2241];
-    status = *(s32 *)(blk + 2236);
+    t = blk[WPAD_TYPE];
+    status = *(s32 *)(blk + WPAD_STATUS);
     if (status != -1 && (t == 1 || t == 2))
         return 0;                       /* a real Nunchuk / Classic Controller wins */
     if (type)

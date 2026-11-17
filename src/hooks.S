@@ -110,6 +110,31 @@ hook_probe:
 
 /* ---- 2009 SDK (KPAD/WPAD built Feb 2009) ---- */
 
+/* Per-profile registers and offsets (build.py 'asm_defs'); the defaults are
+ * the Nintendo Channel's (Feb 2009 KPAD).  Later KPADs keep the same code
+ * shape but allocate registers differently:
+ *   POLL_FRAME      KPADiRead's stack frame (its first instruction)
+ *   K_BLK           KPAD block register (also r25 = channel at SAMPLE)
+ *   K_CNT           sample count offset in the KPAD block
+ *   BTN_TMP         scratch register at the button compose (the replaced
+ *                   andi. writes it; the other one may be live)
+ *   M_TOTAL         samples this read, at the copy-outs */
+#ifndef POLL_FRAME
+#define POLL_FRAME 272
+#endif
+#ifndef K_BLK
+#define K_BLK 26
+#endif
+#ifndef K_CNT
+#define K_CNT 0x13B
+#endif
+#ifndef BTN_TMP
+#define BTN_TMP 9
+#endif
+#ifndef M_TOTAL
+#define M_TOTAL 22
+#endif
+
 /* KPADiRead entry (r3 = channel): GameCube SI poller */
     .globl hook_poll
 hook_poll:
@@ -118,70 +143,70 @@ hook_poll:
     RESTORE_ALL
     lwz     0, 0x0c(1)
     addi    1, 1, FRAME
-    stwu    1, -272(1)              /* replaced instruction */
+    stwu    1, -POLL_FRAME(1)       /* replaced instruction */
     b       RET_POLL
 
-/* KPADiRead sample-count check (r26 = KPAD block, r25 = channel) */
+/* KPADiRead sample-count check (K_BLK = KPAD block, r25 = channel) */
     .globl hook_sample
 hook_sample:
     SAVE
-    mr      3, 26
+    mr      3, K_BLK
     mr      4, 25
     bl      gc_sample
     RESTORE_ALL
     lwz     0, 0x0c(1)
     addi    1, 1, FRAME
-    lbz     0, 0x13b(26)            /* replaced instruction */
+    lbz     0, K_CNT(K_BLK)         /* replaced instruction */
     b       RET_SAMPLE
 
 /* Button compose leaf (r4 = extension type, r6 = Wii Remote buttons,
- * r8 = Classic Controller buttons; r0 is live, r9 and cr0 are rewritten by
- * the replaced andi.). Same mapping as the 2007 stub. */
+ * r8 = Classic Controller buttons; BTN_TMP and cr0 are rewritten by the
+ * replaced andi.). Same mapping as the 2007 stub. */
     .globl hook_buttons
 hook_buttons:
     cmplwi  4, 2
     bne     9f
-    andi.   9, 8, 0x0800            /* HOME */
+    andi.   BTN_TMP, 8, 0x0800      /* HOME */
     beq     1f
     ori     6, 6, 0x8000
-1:  andi.   9, 8, 0x0001            /* Up */
+1:  andi.   BTN_TMP, 8, 0x0001      /* Up */
     beq     1f
     ori     6, 6, 0x0008
-1:  andi.   9, 8, 0x4000            /* Down */
+1:  andi.   BTN_TMP, 8, 0x4000      /* Down */
     beq     1f
     ori     6, 6, 0x0004
-1:  andi.   9, 8, 0x0002            /* Left */
+1:  andi.   BTN_TMP, 8, 0x0002      /* Left */
     beq     1f
     ori     6, 6, 0x0001
-1:  andi.   9, 8, 0x8000            /* Right */
+1:  andi.   BTN_TMP, 8, 0x8000      /* Right */
     beq     1f
     ori     6, 6, 0x0002
-1:  andi.   9, 8, 0x0010            /* A */
+1:  andi.   BTN_TMP, 8, 0x0010      /* A */
     beq     1f
     ori     6, 6, 0x0800
-1:  andi.   9, 8, 0x0040            /* B */
+1:  andi.   BTN_TMP, 8, 0x0040      /* B */
     beq     1f
     ori     6, 6, 0x0400
-1:  andi.   9, 8, 0x0008            /* X -> 1 */
+1:  andi.   BTN_TMP, 8, 0x0008      /* X -> 1 */
     beq     1f
     ori     6, 6, 0x0200
-1:  andi.   9, 8, 0x0020            /* Y -> 2 */
+1:  andi.   BTN_TMP, 8, 0x0020      /* Y -> 2 */
     beq     1f
     ori     6, 6, 0x0100
-1:  andi.   9, 8, 0x1000            /* Minus */
+1:  andi.   BTN_TMP, 8, 0x1000      /* Minus */
     beq     1f
     ori     6, 6, 0x1000
-1:  andi.   9, 8, 0x0400            /* Plus */
+1:  andi.   BTN_TMP, 8, 0x0400      /* Plus */
     beq     9f
     ori     6, 6, 0x0010
-9:  andi.   9, 6, 0x9fff            /* replaced instruction */
+9:  andi.   BTN_TMP, 6, 0x9fff      /* replaced instruction */
     b       RET_BUTTONS
 
 /* The copy-out loops' registers (Nintendo Channel defaults; the Photo
  * Channel's KPAD, built Sept 2008, allocates them differently):
  *   M1_*: per-sample mode, M2_*: compose-once mode
- *   DEST = entry just written, LEFT = samples left; r26 = KPAD block,
- *   r22 = samples this read in both */
+ *   DEST = entry just written, LEFT = samples left; K_BLK = KPAD block,
+ *   M_TOTAL = samples this read in both */
 #ifndef M1_DEST
 #define M1_DEST 24
 #define M1_LEFT 25
@@ -195,8 +220,8 @@ hook_motion:
     SAVE
     SAVE_FP
     mr      3, M1_DEST
-    mr      4, 26
-    subf    5, M1_LEFT, 22
+    mr      4, K_BLK
+    subf    5, M1_LEFT, M_TOTAL
     cntlzw  5, 5
     srwi    5, 5, 5
     bl      cc_motion_k
@@ -213,8 +238,8 @@ hook_motion2:
     SAVE
     SAVE_FP
     mr      3, M2_DEST
-    mr      4, 26
-    subf    5, M2_LEFT, 22
+    mr      4, K_BLK
+    subf    5, M2_LEFT, M_TOTAL
     cntlzw  5, 5
     srwi    5, 5, 5
     bl      cc_motion_k
