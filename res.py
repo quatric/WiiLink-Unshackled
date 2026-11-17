@@ -13,11 +13,16 @@ Features:
                (manuals, layouts, message files, the News Channel's banner), but not
                where it names the Wii Settings option (standby connection, "WiiConnect24
                setting"), which the console still calls WiiConnect24.  "Nintendo" ->
-               "WiiLink" only where Nintendo runs the service: the Forecast manual's
-               "Nintendo may not be able to answer...", the Everybody Votes manual's
+               "WiiLink" only where Nintendo runs the service: the Forecast and News
+               manuals' "Nintendo may not be able to answer..." / "cannot answer any
+               inquiries" (and the Japanese 弊社), the Everybody Votes manual's
                "send your suggested question to Nintendo" and Check Mii Out's
                "Please Contact Nintendo".  Copyright lines and Club Nintendo stay.
-  aplogo       News Channel: the manual's 2000s AP logo -> AP's current logo.
+  newslogos    News Channel: the manual's Source page shows the source WiiLink uses
+               for the console's language, with its logo (assets/news, from WiiLink's
+               News Channel server) and copyright line: USA AP (current logo); PAL
+               English Reuters, French France 24, German tagesschau, Spanish RTVE,
+               Italian ANSA, Dutch NOS; Japan Reuters.  (aplogo is the old name.)
 
 The containers are opened as needed (U8, LZ10 / LZ11 with or without the LZ77
 magic, IMD5, the IMET banner) and only the ones holding a changed file are
@@ -170,9 +175,32 @@ def edit_tree(d, path, leaf):
     return rewrap(kind, new)
 
 
+def u8_add(nodes, paths, rel, data):
+    """add the file rel (its folder must exist) at the end of its folder"""
+    folder, name = rel.rsplit('/', 1)
+    p = paths.index(folder)
+    if nodes[p][0] != 1:
+        raise SystemExit('U8: %s is not a folder' % folder)
+    k = nodes[p][3]                                 # one past the folder's last entry
+    for i, n in enumerate(nodes):
+        if n[0] == 1:
+            if i >= k or (i <= p and (paths[i] == '' or folder == paths[i] or folder.startswith(paths[i] + '/'))):
+                n[3] += 1
+            if i >= k and n[2] >= k:
+                n[2] += 1
+    nodes.insert(k, [0, name, 0, len(data), data])
+    paths.insert(k, rel)
+
+
 def edit_u8(d, path, leaf, sizes):
     nodes, paths = banner.u8_read(d)
     changed = False
+    for rel, data in getattr(leaf, 'add', lambda p: {})(path).items():
+        if rel in paths:
+            nodes[paths.index(rel)][4] = data
+        else:
+            u8_add(nodes, paths, rel, data)
+        changed = True
     for node, p in zip(nodes, paths):
         if node[0] != 0:
             continue
@@ -189,7 +217,12 @@ def edit_u8(d, path, leaf, sizes):
 WC24 = re.compile(r'W( ?)i\1i\1C\1o\1n\1n\1e\1c\1t\1(?:2\1)?4')
 # a sentence naming the Wii Settings option keeps "WiiConnect24"
 SETTING = ('Standby', 'standby', 'スタンバイ', 'setting', 'Setting', 'param', 'configuraci', 'configurad',
-           'Einstellung', 'impostazion', 'instelling', 'ingesteld', '設定', 'Wii Options', 'espera', 'veille')
+           'Einstellung', 'impostazion', 'instelling', 'ingesteld', '設定', 'Wii Options', 'espera', 'veille',
+           # the console's WiiConnect24 switched on / off, the Wii Options in other languages
+           'activ', 'attiv', 'ausgeschaltet', 'uit.', 'turned off', 'enabled', 'disabled', 'Optionen', 'pzioni Wii',
+           'opciones de Wii',
+           # Nintendo Channel: games' "Supports WiiConnect24" feature tag
+           'Supports', 'Compatible', 'Unterst\u00fctzt', 'Supporta', 'Werkt met', '\u5bfe\u5fdc')
 SENTENCE = re.compile(r'[^.。!?！？]*(?:[.。!?！？]|$)', re.S)
 
 NINTENDO = [            # (old, new): Nintendo as the service's operator
@@ -200,7 +233,14 @@ NINTENDO = [            # (old, new): Nintendo as the service's operator
     ('propuesta a Nintendo.', 'propuesta a WiiLink.'),
     ('suggestion \xe0 Nintendo.', 'suggestion \xe0 WiiLink.'),
     ('suggestion &agrave; Nintendo.', 'suggestion &agrave; WiiLink.'),
-    ('suggestion \xc3\xa0 Nintendo.', 'suggestion \xc3\xa0 WiiLink.'),     # UTF-8 read as Latin-1
+    # News Channel (PAL, Japan) Source page: "Nintendo cannot answer any inquiries..."
+    ('Please note that Nintendo cannot', 'Please note that WiiLink cannot'),
+    ("Veuillez noter que Nintendo n'est", "Veuillez noter que WiiLink n'est"),
+    ('dass Nintendo keinerlei', 'dass WiiLink keinerlei'),
+    ('Recuerda que Nintendo no puede', 'Recuerda que WiiLink no puede'),
+    ('Nota: Nintendo non ', 'Nota: WiiLink non '),
+    ('Nintendo kan geen vragen', 'WiiLink kan geen vragen'),
+    ('\u5f0a\u793e\u306f\u3001\u914d\u4fe1', 'WiiLink\u306f\u3001\u914d\u4fe1'),      # 弊社は、配信 (Japan)
 ]
 # Check Mii Out's contest script (icon.cs) keeps its strings length-prefixed: same length
 SAME_LENGTH = [
@@ -350,9 +390,12 @@ KEYWORDS = ('WiiConnect', 'W i i C o n n e c t', 'Nintendo', 'weathernews', 'Wea
 def edit_text(path, d, rule):
     low = path.lower()
     if low.endswith(('.html', '.htm')):
-        s = d.decode('latin1')
+        try:
+            enc, s = 'utf-8', d.decode('utf-8')     # most manuals (the Japanese ones' sentences need it)
+        except UnicodeDecodeError:
+            enc, s = 'latin1', d.decode('latin1')
         new = rule(s)
-        return new.encode('latin1') if new != s else None
+        return new.encode(enc) if new != s else None
     if low.endswith('.brlyt'):
         return edit_brlyt(d, rule)
     if low.endswith('.bmg'):
@@ -388,6 +431,82 @@ def accu_credit_tpl(d):
     return bytes(d)
 
 
+# ---- News Channel sources ----
+NEWS_IMG = 'html/img/CHM_common_source/'
+NEWS_PAL = {   # language: (logo, copyright line)
+    'ukv': ('reuters', '\u00a9 Reuters. All rights reserved.'),
+    'fra': ('france24', '\u00a9 Copyright France 24 - Tous droits r\u00e9serv\u00e9s.'),
+    'noe': ('tagesschau', '\u00a9 ARD-aktuell / tagesschau.de'),
+    'esp': ('rtve', '\u00a9 Corporaci\u00f3n de Radio y Televisi\u00f3n Espa\u00f1ola'),
+    'ita': ('ansa', 'Copyright \u00a9 ANSA<br />Tutti i diritti riservati'),
+    'hol': ('nos', '\u00a9 NOS'),
+}
+# PAL page_10: from the first source's logo to the closing note
+NEWS_BLOCK = re.compile(r'<img src="\.\./\.\./img/CHM_common_source/(?:AFP|ANP|ANSA)_logo\.gif" ?/?>.*?(?=<span class="redTextTwo">)', re.S)
+
+
+def news_pal_page(lang, s):
+    logo, line = NEWS_PAL[lang]
+    w, h = jpeg_size(asset('news', logo + '.jpg'))
+    new = ('<img src="../../img/CHM_common_source/WiiLink_%s.jpg" width="%d" height="%d" /><br />\r\n'
+           '              <img src="../../img/CHM_common_source/spacer.png" height="10" /><br />\r\n'
+           '              %s<br />\r\n'
+           '              <img src="../../img/CHM_common_source/spacer.png" width="30" height="30" /><br />\r\n'
+           '              ' % (logo, w, h, line.encode('utf-8').decode('latin1')))
+    out, n = NEWS_BLOCK.subn(lambda m: new, s, count=1)
+    if not n:
+        raise SystemExit('News manual (%s): the Source page is not the one expected' % lang)
+    return out
+
+
+def news_jp_page(s):
+    """Japan page_09: one picture of all the sources (page9_logos.png, 530x350) ->
+    Reuters' logo, and its copyright line under it"""
+    w, h = jpeg_size(asset('news', 'reuters.jpg'))
+    old = re.search(r'<img src="page9_logos\.png"[^>]*>', s)
+    if not old:
+        raise SystemExit('News manual (Japan): the Source page is not the one expected')
+    return s[:old.start()] + ('<img src="WiiLink_reuters.jpg" alt="Reuters" width="%d" height="%d" /><br /><br />'
+                              '\u00a9 Reuters. All rights reserved.' % (w, h)).encode('utf-8').decode('latin1') + s[old.end():]
+
+
+def asset(*p):
+    return open(os.path.join(ASSETS, *p), 'rb').read()
+
+
+def jpeg_size(d):
+    i = 2
+    while i < len(d):
+        m, n = d[i + 1], struct.unpack('>H', d[i + 2:i + 4])[0]
+        if 0xC0 <= m <= 0xCF and m not in (0xC4, 0xC8, 0xCC):
+            h, w = struct.unpack('>HH', d[i + 5:i + 9])
+            return w, h
+        i += 2 + n
+    raise ValueError('no JPEG frame')
+
+
+def news_leaf(path, d):
+    low = path.lower()
+    m = re.search(r'/html/(\w+)/page_10/page_10\.html$', path)
+    if m and m.group(1) in NEWS_PAL and '/html-eu.arc/' in path:
+        s = d.decode('latin1')
+        return news_pal_page(m.group(1), s).encode('latin1')
+    if '/html-jp.arc/' in path and low.endswith('/page_09/page_09.html'):
+        return news_jp_page(d.decode('latin1')).encode('latin1')
+    if low.endswith('/ap_logo.gif') and '/html-eu.arc/' not in path:
+        return asset('news', 'ap_logo.gif')
+    return None
+
+
+def news_add(path):
+    """files to add to the U8 archive at path: the logos"""
+    if path.endswith('/html-eu.arc'):
+        return {NEWS_IMG + 'WiiLink_%s.jpg' % logo: asset('news', logo + '.jpg') for logo, _ in NEWS_PAL.values()}
+    if path.endswith('/html-jp.arc'):
+        return {'html/page_09/WiiLink_reuters.jpg': asset('news', 'reuters.jpg')}
+    return {}
+
+
 def leaf_for(feats):
     rule = text_rules(feats)
 
@@ -395,11 +514,16 @@ def leaf_for(feats):
         low = path.lower()
         if 'accuweather' in feats and low.endswith('/tplweather.tpl.lz'):
             return accu_credit_tpl(d)
-        if 'aplogo' in feats and low.endswith('/ap_logo.gif'):
-            return open(os.path.join(ASSETS, 'news', 'ap_logo.gif'), 'rb').read()
+        changed = news_leaf(path, d) if feats & {'newslogos', 'aplogo'} else None
+        if changed is not None:
+            d = changed
         if feats & {'wiilink', 'accuweather'}:
-            return edit_text(path, d, rule)
-        return None
+            out = edit_text(path, d, rule)
+            if out is not None:
+                return out
+        return changed
+
+    leaf.add = news_add if feats & {'newslogos', 'aplogo'} else (lambda p: {})
     return leaf
 
 

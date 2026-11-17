@@ -4,25 +4,32 @@ Adds Classic Controller and GameCube controller support to WiiLink's channels, t
 
 | Channel | Title | Main DOL (content 1) |
 |---|---|---|
-| Forecast Channel | HAFE | 1,926,048 bytes |
-| News Channel | HAGE | 2,019,232 bytes |
-| Everybody Votes Channel | HAJE | 2,653,152 bytes |
-| Check Mii Out Channel | HAPE | 3,410,240 bytes |
-| Nintendo Channel | HATE | 3,988,896 bytes |
+| Forecast Channel (USA, PAL, Japan: one DOL) | HAFE / HAFP / HAFJ | 1,926,048 bytes |
+| News Channel (USA, PAL, Japan: one DOL) | HAGE / HAGP / HAGJ | 2,019,232 bytes |
+| Everybody Votes Channel (USA) | HAJE | 2,653,152 bytes |
+| Everybody Votes Channel (PAL) | HAJP | 2,653,376 bytes |
+| Everybody Votes Channel (Japan) | HAJJ | 2,882,016 bytes |
+| Check Mii Out Channel (USA) | HAPE | 3,410,240 bytes |
+| Mii Contest Channel (PAL) | HAPP | 3,410,240 bytes (another build: told apart by its code) |
+| Check Mii Out Channel (Japan) | HAPJ | 3,410,304 bytes |
+| Nintendo Channel (USA) | HATE | 3,988,896 bytes |
+| Nintendo Channel (PAL) | HATP | 3,992,768 bytes |
+| Nintendo Channel (Japan) | HATJ | 4,195,200 bytes |
 | Photo Channel 1.1 | HAYA | 2,300,448 bytes |
 | Food Channel (Standard, Domino's, Just Eat) / Demae Channel | HCHJ | 3,709,084 or 3,722,036 bytes |
 | Digicam Print Channel / Photo Prints Channel | HCDJ | 3,303,168 bytes |
 | Today and Tomorrow Channel (Japan) | HAVJ | 4,247,616 bytes |
 | Today and Tomorrow Channel (PAL) | HAVP | 3,384,512 bytes |
-| Wii no Ma / Wii Room (every language) | HCIJ | 8,929,568 bytes |
+| Wii no Ma / Wii Room (every language) | HCIJ | 8,929,568 bytes (Portuguese 8,929,328, Russian 8,929,324) |
 | Kirby TV Channel | HCMP | 4,825,024 bytes |
-| Wii Speak Channel (USA, Wiimmfi) | HCFE | 4,369,376 bytes |
-| Internet Channel (USA) | HADE | 9,180,992 bytes |
+| Wii Speak Channel (USA, PAL; Wiimmfi) | HCFE / HCFP | 4,369,376 bytes |
+| Wii Speak Channel (Japan, Wiimmfi) | HCFJ | 4,372,384 bytes |
+| Internet Channel (USA, PAL, Japan: one DOL) | HADE / HADP / HADJ | 9,180,992 bytes |
 
 Sizes are for the uncompressed DOL. Most of these WADs store content 1 LZ-compressed; `build.py` unpacks it and writes the patched DOL back uncompressed (the boot program loads either).
 
 ```
-python3 build.py wad "<channel> (USA) (WiiLink).wad" out.wad [--clock] [--calm] [--wiilink] [--accuweather] [--aplogo]
+python3 build.py wad "<channel> (WiiLink).wad" out.wad [--clock] [--calm] [--wiilink] [--accuweather] [--newslogos]
 python3 build.py dol 00000001.app out.app [--clock] [--calm] [--wiilink]
 ```
 
@@ -63,6 +70,7 @@ Tested in Dolphin with a test build that forced direction 0 for the current weat
 
 * **The Wii Menu banner and icon:** the logo (below). `banner.py` does the work on content 0 (`opening.bnr`), and can also be run on its own: `python3 banner.py 00000000.app out.app`.
 * **In the channel:** the "supported by weathernews" credit line under the forecast (`TPLWeather.tpl`, images 22 to 25: plain and outlined, and the Japanese "ウェザーニュース" versions) reads "supported by AccuWeather". The channel's own "supported by " is kept; the new name is drawn to match its lettering (`tools/mkcredit.py`, Verdana Bold fitted to the original pixel by pixel, in `assets/accuweather/credit*.ia4`).
+* **The banner** (Wii Menu) of the Japanese build says "supported by ウェザーニュース": it becomes "supported by AccuWeather" too (the text pane grows to fit).
 * **The manual:** the "supported by weathernews" captions (English, French, Spanish) and the Source page: "provided by AccuWeather, Inc." and https://www.accuweather.com. The screenshots in the manual still show the old credit; it is too small to read in them.
 
 `res.py` makes the channel and manual changes. There is no "weathernews" in the channel's `banner.rso` (checked as stored, LZ-unpacked and as UTF-16), and `TPLCommon.tpl` has only NASA's image credits.
@@ -79,15 +87,28 @@ The textures in `assets/accuweather/` are AccuWeather's official horizontal logo
 
 `--wiilink` (every channel) says "WiiLink" where the channels say "WiiConnect24" for the service that brings their data: in the manuals, the layouts' text (error messages and the like), the message files (the Nintendo Channel's) and the News Channel's Wii Menu banner, whose letter-spaced "W i i C o n n e c t 2 4" becomes "W i i L i n k". In `dol` mode (and in the Wii app) only the messages inside the main DOL change; in `wad` mode `res.py` does the rest.
 
-* Sentences about the Wii Settings option keep "WiiConnect24", because the console still calls it that: "WiiConnect24 Standby Connection is currently turned off", "turn your WiiConnect24 setting on in the Wii Settings". This is done sentence by sentence, in all seven languages.
-* "Nintendo" changes only where Nintendo stood for the service's operator: the Forecast manual's "Nintendo may not be able to answer every question" (three languages), the Everybody Votes manual's "send your suggested question to Nintendo" (three languages) and Check Mii Out's contest text "Please Contact Nintendo For Further Information". Copyright notices, "Club Nintendo" and "created by Nintendo" stay.
+* Sentences about the Wii Settings option keep "WiiConnect24", because the console still calls it that: "WiiConnect24 Standby Connection is currently turned off", "turn your WiiConnect24 setting on in the Wii Settings", "WiiConnect24 n'est pas activé", "WiiConnect24 ist zurzeit ausgeschaltet". So do the Nintendo Channel's game tags ("Supports WiiConnect24", "WiiConnect24対応"). This is done sentence by sentence, in all seven languages, in every region's build.
+* "Nintendo" changes only where Nintendo stood for the service's operator: the Forecast manual's "Nintendo may not be able to answer every question" (three languages), the News manual's "Nintendo cannot answer any inquiries" (PAL, six languages; the Japanese manuals' 弊社), the Everybody Votes manual's "send your suggested question to Nintendo" (three languages) and Check Mii Out's contest text "Please Contact Nintendo For Further Information". Copyright notices, "Club Nintendo" and "created by Nintendo" stay.
 * Text only ever gets shorter, so every string stays in its own space. Check Mii Out's contest script counts its strings' lengths, so there the line keeps its length (with a trailing space).
 
 Main DOLs with WiiConnect24 messages: the Food and Demae Channels (their error messages). The other channels keep theirs in layouts or manuals.
 
-## News Channel: AP logo (`--aplogo`)
+## News Channel: sources (`--newslogos`)
 
-`--aplogo` (News Channel, `wad` mode) replaces the manual's Associated Press logo (the 2000s "AP Associated Press" one, on the Source page) with AP's current logo: the black AP over a red bar, from `Associated_Press_logo_2012.svg` on Wikimedia Commons, at the manual's 51 pixel height (`assets/news/ap_logo.gif`).
+`--newslogos` (News Channel, `wad` mode; `--aplogo` is its old name) makes the manual's Source page show the source WiiLink's News Channel server uses for the console's language, with that source's logo (`assets/news/`, the logos WiiLink's server sends to the channel) and copyright line:
+
+| Manual | Source |
+|---|---|
+| USA | The Associated Press: the old "AP Associated Press" logo becomes AP's current one |
+| PAL English | Reuters |
+| PAL French | France 24 |
+| PAL German | tagesschau (ARD-aktuell) |
+| PAL Spanish | RTVE |
+| PAL Italian | ANSA |
+| PAL Dutch | NOS |
+| Japan | Reuters (in place of the picture of Mainichi, NNN, goo and NTT Communications' logos) |
+
+The PAL pages lose their AFP / ANP / ANSA and AP blocks for the one source; the new logos are added to the manual's archive (`res.py` can add files to a U8 archive). With `--wiilink` too, the page's closing "Nintendo cannot answer any inquiries..." says WiiLink (every PAL language, and the Japanese 弊社 "we").
 
 ## Everybody Votes Channel extras
 
@@ -221,6 +242,7 @@ The 2007-SDK channels share one SDK build, so each address is the same code in a
 
 * **Data addresses** (SI tables, WPAD table, arena constants) are read from the matched lis/addi pairs.
 * **New profile:** `tools/port.py <Forecast 00000001.app> <new 00000001.app> <key>` prints a `CHANNELS` entry for a 2007-SDK channel. Paste it into `build.py` and fill in the title.
+* **Another region of a supported channel:** `tools/portprofile.py <key> <known main DOL> <new main DOL> <new key> <title>` ports the whole profile: hook sites, arena, functions, data, the channel's patches (checked against the new DOL, with their branches re-aimed), the keyboard and SD hooks. Data that no lis/addi pair builds is moved by its nearest ported neighbour's shift (it says which). The PAL and Japanese profiles in `build.py` were made this way. Two builds of the same size (Check Mii Out USA, Mii Contest PAL) are told apart by the words at their hook sites and patches.
 
 ## Debugging
 

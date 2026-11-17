@@ -27,23 +27,23 @@ GodModeWii. Every controller libwiiinput reads works: Wii Remote, Classic Contro
 
 | Channel | Features |
 |---|---|
-| Forecast Channel (USA) | Classic Controller and GameCube pads, clock on US consoles, globe tilts both ways, "Calm" for no wind (off by default) |
-| News Channel (USA) | pads, clock on US consoles |
-| Everybody Votes Channel (USA) | pads, USB keyboard, no daily suggestion limit |
-| Check Mii Out Channel (USA) | pads, gold pants Miis, debug menu (hold 1+2; off by default; the three entries that freeze a console do nothing) |
-| Nintendo Channel (USA) | pads |
+| Forecast Channel (USA, PAL, Japan) | Classic Controller and GameCube pads, clock on US consoles, globe tilts both ways, "Calm" for no wind (off by default) |
+| News Channel (USA, PAL, Japan) | pads, clock on US consoles |
+| Everybody Votes Channel (USA, PAL, Japan) | pads, USB keyboard, no daily suggestion limit |
+| Check Mii Out Channel (USA, Japan) / Mii Contest Channel (PAL) | pads, gold pants Miis, debug menu (hold 1+2; off by default; the three entries that freeze a console do nothing) |
+| Nintendo Channel (USA, PAL, Japan) | pads |
 | Photo Channel 1.1 | pads, Message Board photos from the SD card |
 | Food Channel (Standard, Domino's, Just Eat) / Demae Channel | pads |
 | Digicam Print / Photo Prints Channel | pads |
 | Today and Tomorrow Channel (Japan, PAL) | pads |
-| Wii no Ma / Wii Room | pads |
+| Wii no Ma / Wii Room (every language) | pads |
 | Kirby TV Channel | pads |
-| Wii Speak Channel (USA) | pads, Message Board photos from the SD card |
-| Internet Channel (USA) | pads |
+| Wii Speak Channel (USA, PAL, Japan) | pads, Message Board photos from the SD card |
+| Internet Channel (USA, PAL, Japan) | pads |
 
 The USB keyboard, the globe tilt table and the Message Board photos live in the controller patch's hook section, so
-they need it ticked. The clock patch is only offered for the US builds: the EU and Japanese ones already show the clock.
-The app only changes content 1 (the main DOL), so the options that change the other contents are `build.py`-only for now: `--accuweather`, `--aplogo`, and `--wiilink` (whose DOL part alone would leave the manuals and layouts unchanged, so the app doesn't offer it either).
+they need it ticked. The clock patch only changes what a US console shows (EU and Japanese consoles already show the clock); the Forecast and News Channels' PAL and Japanese builds have the same main DOL as the USA ones, so they get the same choices.
+The app only changes content 1 (the main DOL), so the options that change the other contents are `build.py`-only for now: `--accuweather`, `--newslogos`, and `--wiilink` (whose DOL part alone would leave the manuals and layouts unchanged, so the app doesn't offer it either).
 
 ### What it checks
 
@@ -101,11 +101,7 @@ submodules, pinned to the commits GodModeWii uses. The patches are `data/patches
 python3 build.py export wii/data/patches.bin "Forecast Channel (USA) (WiiLink).wad" "News Channel (USA) (WiiLink).wad" ...
 ```
 
-with every WAD the app should recognise. The export used for `data/patches.bin`: Forecast, News, Everybody Votes, Check
-Mii Out and Nintendo Channels (USA), Food Channel (Standard, Domino's, Just Eat), Demae Channel (Standard), Digicam
-Print and Photo Prints Channels, Today and Tomorrow Channel (Japan, PAL), Wii Room and Wii no Ma, Kirby TV Channel,
-Wii Speak Channel (USA, Wiimmfi) and Internet Channel (USA) (all from WiiLink's WAD set), and the Photo Channel 1.1
-system WAD. Builds with the same content 1 share an entry.
+with every WAD the app should recognise. The export used for `data/patches.bin`: every channel WAD in WiiLink's WAD set (USA, PAL and Japan, every Wii Room language; not Region Select or the Address Settings), USA first, and the Photo Channel 1.1 system WAD. Builds with the same content 1 share an entry.
 
 ## patches.bin
 

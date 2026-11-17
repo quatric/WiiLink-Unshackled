@@ -3,7 +3,7 @@
 (Everybody Votes Channel: also USB keyboard and no daily suggestion limit).
 
   build.py dol <00000001.app in> <00000001.app out> [--clock] [--calm] [--wiilink] [--debug-feed] [--debug-menu]
-  build.py wad <channel .wad> <out.wad> [--clock] [--calm] [--wiilink] [--accuweather] [--aplogo]
+  build.py wad <channel .wad> <out.wad> [--clock] [--calm] [--wiilink] [--accuweather] [--newslogos]
                                        [--debug-feed] [--debug-menu]
   build.py export <patches.bin> <channel .wad>...    (for the Wii app, wii/)
 
@@ -19,7 +19,10 @@ wind with no direction as "Calm" on US consoles, as elsewhere, not "None".
 --wiilink (every channel) says WiiLink for WiiConnect24 where it means the
 service, in the DOL's messages and, in wad mode, the manual, layouts and banner
 (res.py).  In wad mode --accuweather also changes the in-channel credit line and
-the manual, and --aplogo (News) puts AP's current logo in the manual.
+the manual, and --newslogos (News) shows the sources WiiLink uses on the manual's
+Source page, with their current logos (res.py).  Every region's WiiLink WADs are
+supported: Forecast, News and Internet use one main DOL everywhere, the others
+have a profile per region (tools/portprofile.py ports a profile to another build).
 `wad` unpacks with Sharpii, patches content 1 (decompressing it if WiiLink LZ-packed it), repacks and fakesigns.
 
 Mapping (Wii Remote <- Classic Controller / GameCube):
@@ -374,7 +377,7 @@ CHANNELS = {
     # output is 0xF0 bytes, and the registers are all different.
     'wiinoma': {
         'title': 'Wii no Ma / Wii Room (HCIJ)',
-        'dol_size': 8929568,
+        'dol_size': [8929568, 8929328, 8929324],    # Portuguese (Brazil), Russian: other text, same code
         'sdk': 2009,
         'arena_lo': 0x809A2C20, 'stack_end': 0x809A0C20, 'lis': 0x809A,
         # the OS writes the 0x800 bytes below __ArenaLo: keep the original gap free
@@ -511,6 +514,106 @@ CHANNELS = {
         'asm_defs': {'K_CHAN': 28, 'WPAD_TYPE': 2049, 'WPAD_STATUS': 2044},
         'clock': None,
     },
+    # ---- other regions (tools/portprofile.py from the USA profiles) ----
+    # Forecast, News and Internet Channels: every region's main DOL is the USA one.
+    # Mii Contest Channel (PAL) is the same size as Check Mii Out (USA): detect()
+    # tells them apart by the hook sites.
+    'cmoc_jp': {
+        'title': 'Check Mii Out Channel (Japan, HAPJ)',
+        'dol_size': 3410304,
+        'arena_lo': 0x804427C0,
+        'stack_end': 0x804407A8,
+        'lis': 0x8044,
+        'arena': [0x8011A188, 0x8011A230, 0x8011A1D8, 0x8011A264],
+        'defs': {'SI_TYPES': 0x80324EC0, 'SI_BUSY': 0x80324EA8, 'SI_SHADOW': 0x80324EAC, 'FN_SIGETTYPE': 0x801749C8, 'FN_OSDISABLE': 0x8012125C, 'FN_OSRESTORE': 0x80121284, 'WPAD_TBL': 0x80345510},
+        'sites': {'POLL': 0x800F116C, 'SAMPLE': 0x800F1284, 'PROBE': 0x800F6728, 'BUTTONS': 0x800F1734, 'MOTION': 0x800F1868},
+        'clock': None,
+        'patches': [(0x802734D0, [0x38600003], [0x48000020], 'gold pants Miis: special Miis count as made on this Wii')],
+        'debug_patches': [(0x80287808, [0x7F83E378, 0x4BFFFFB9, 0x2C030000, 0x41820028, 0x38000000, 0x901C2394, 0x387C2398, 0x38800001, 0x48000651, 0x387C23AC, 0x38800000, 0x48000615, 0x480001E4], [0x4BD85A09, 0x38800000, 0x4BFDE0FD, 0x80030014, 0x80830018, 0x70840300, 0x4182001C, 0x70000300, 0x2C000300, 0x40820010, 0x387C2398, 0x38800001, 0x48000641], 'debug menu: 1+2 opens the debug overlay'), (0x8028E5A0, [0x4BD7ADE1], [0x4800000C], 'debug menu: "Debug Save Data Access" does nothing (scene 5)'), (0x8028E5C8, [0x4BD7ADB9], [0x4800000C], 'debug menu: "Debug Menu" does nothing (scene 3)'), (0x8028E5F0, [0x4BD7AD91], [0x4800000C], 'debug menu: "Rare Message Check" does nothing (scene 4)')],
+    },
+    'cmoc_pal': {
+        'title': 'Mii Contest Channel (PAL, HAPP)',
+        'dol_size': 3410240,
+        'arena_lo': 0x80442740,
+        'stack_end': 0x80440728,
+        'lis': 0x8044,
+        'arena': [0x8011A148, 0x8011A1F0, 0x8011A198, 0x8011A224],
+        'defs': {'SI_TYPES': 0x80324E80, 'SI_BUSY': 0x80324E68, 'SI_SHADOW': 0x80324E6C, 'FN_SIGETTYPE': 0x80174988, 'FN_OSDISABLE': 0x8012121C, 'FN_OSRESTORE': 0x80121244, 'WPAD_TBL': 0x80345490},
+        'sites': {'POLL': 0x800F112C, 'SAMPLE': 0x800F1244, 'PROBE': 0x800F66E8, 'BUTTONS': 0x800F16F4, 'MOTION': 0x800F1828},
+        'clock': None,
+        'patches': [(0x80273490, [0x38600003], [0x48000020], 'gold pants Miis: special Miis count as made on this Wii')],
+        'debug_patches': [(0x802877C8, [0x7F83E378, 0x4BFFFFB9, 0x2C030000, 0x41820028, 0x38000000, 0x901C2394, 0x387C2398, 0x38800001, 0x48000651, 0x387C23AC, 0x38800000, 0x48000615, 0x480001E4], [0x4BD85A49, 0x38800000, 0x4BFDE0FD, 0x80030014, 0x80830018, 0x70840300, 0x4182001C, 0x70000300, 0x2C000300, 0x40820010, 0x387C2398, 0x38800001, 0x48000641], 'debug menu: 1+2 opens the debug overlay'), (0x8028E560, [0x4BD7AE21], [0x4800000C], 'debug menu: "Debug Save Data Access" does nothing (scene 5)'), (0x8028E588, [0x4BD7ADF9], [0x4800000C], 'debug menu: "Debug Menu" does nothing (scene 3)'), (0x8028E5B0, [0x4BD7ADD1], [0x4800000C], 'debug menu: "Rare Message Check" does nothing (scene 4)')],
+    },
+    'evc_pal': {
+        'title': 'Everybody Votes Channel (PAL, HAJP)',
+        'dol_size': 2653376,
+        'arena_lo': 0x80407040,
+        'stack_end': 0x80405040,
+        'lis': 0x8040,
+        'arena': [0x800FEA20, 0x800FEAC8, 0x800FEA70, 0x800FEAFC],
+        'defs': {'SI_TYPES': 0x80283228, 'SI_BUSY': 0x80283210, 'SI_SHADOW': 0x80283214, 'FN_SIGETTYPE': 0x80155F2C, 'FN_OSDISABLE': 0x80105580, 'FN_OSRESTORE': 0x801055A8, 'WPAD_TBL': 0x802AFAB0},
+        'sites': {'POLL': 0x80158EA0, 'SAMPLE': 0x80158FB8, 'PROBE': 0x800DD0B8, 'BUTTONS': 0x80159468, 'MOTION': 0x8015959C},
+        'clock': None,
+        'hook_size': 0x2000,
+        'kbd': {'site': 0x800858A4, 'defs': {'FN_IOS_OPEN': 0x800F5440, 'FN_IOS_IOCTLASYNC': 0x800F5CA0, 'SLOT_ONCOMMAND': 5, 'SLOT_GETTOOLBAR': 16, 'SLOT_OK': 35, 'SLOT_CANCEL': 36, 'CMD_CHAR': 0, 'CMD_DELETE': 1, 'CMD_LEFT': 7, 'CMD_RIGHT': 8}},
+        'patches': [(0x800627C0, [0x9421FFC0, 0x7C0802A6], [0x38600001, 0x4E800020], 'suggestion limit: "suggested today?" check always says no')],
+    },
+    'evc_jp': {
+        'title': 'Everybody Votes Channel (Japan, HAJJ)',
+        'dol_size': 2882016,
+        'arena_lo': 0x8044F440,
+        'stack_end': 0x8044D430,
+        'lis': 0x8045,
+        'arena': [0x80132580, 0x80132628, 0x801325D0, 0x8013265C],
+        'defs': {'SI_TYPES': 0x802BAF08, 'SI_BUSY': 0x802BAEF0, 'SI_SHADOW': 0x802BAEF4, 'FN_SIGETTYPE': 0x80189A8C, 'FN_OSDISABLE': 0x801390E0, 'FN_OSRESTORE': 0x80139108, 'WPAD_TBL': 0x802F7F10},
+        'sites': {'POLL': 0x8018CA00, 'SAMPLE': 0x8018CB18, 'PROBE': 0x80110C18, 'BUTTONS': 0x8018CFC8, 'MOTION': 0x8018D0FC},
+        'clock': None,
+        'hook_size': 0x2000,
+        'kbd': {'site': 0x80084BBC, 'defs': {'FN_IOS_OPEN': 0x80128FA0, 'FN_IOS_IOCTLASYNC': 0x80129800, 'SLOT_ONCOMMAND': 5, 'SLOT_GETTOOLBAR': 16, 'SLOT_OK': 35, 'SLOT_CANCEL': 36, 'CMD_CHAR': 0, 'CMD_DELETE': 1, 'CMD_LEFT': 7, 'CMD_RIGHT': 8}},
+        'patches': [(0x80061F48, [0x9421FFC0, 0x7C0802A6], [0x38600001, 0x4E800020], 'suggestion limit: "suggested today?" check always says no')],
+    },
+    'nintendo_pal': {
+        'title': 'Nintendo Channel (PAL, HATP)',
+        'dol_size': 3992768,
+        'sdk': 2009,
+        'hook_size': 0x2000,
+        'arena_lo': 0x807D3EE0,
+        'stack_end': 0x807D1ED8,
+        'lis': 0x807D,
+        'arena': [0x801EDECC, 0x801EDF74, 0x801EDF1C, 0x801EDFA8],
+        'defs': {'SI_TYPES': 0x803BC4A8, 'SI_BUSY': 0x803BC490, 'SI_SHADOW': 0x803BC494, 'FN_SIGETTYPE': 0x801FFB40, 'FN_OSDISABLE': 0x801F4360, 'FN_OSRESTORE': 0x801F43A0, 'WPAD_TBL': 0x806C1590, 'KPAD_BASE': 0x806C4D28, 'KPAD_STRIDE': 0x570},
+        'sites': {'POLL': 0x8022F400, 'SAMPLE': 0x8022F57C, 'PROBE': 0x80222F90, 'BUTTONS': 0x8022CD84, 'MOTION': 0x8022FA5C, 'MOTION2': 0x8022FBCC},
+        'clock': None,
+    },
+    'nintendo_jp': {
+        'title': 'Nintendo Channel (Japan, HATJ)',
+        'dol_size': 4195200,
+        'sdk': 2009,
+        'hook_size': 0x2000,
+        'arena_lo': 0x80814A60,
+        'stack_end': 0x80812A50,
+        'lis': 0x8081,
+        'arena': [0x802143BC, 0x80214464, 0x8021440C, 0x80214498],
+        'defs': {'SI_TYPES': 0x803EDB28, 'SI_BUSY': 0x803EDB10, 'SI_SHADOW': 0x803EDB14, 'FN_SIGETTYPE': 0x80226030, 'FN_OSDISABLE': 0x8021A850, 'FN_OSRESTORE': 0x8021A890, 'WPAD_TBL': 0x807020D0, 'KPAD_BASE': 0x80705868, 'KPAD_STRIDE': 0x570},
+        'sites': {'POLL': 0x802558F0, 'SAMPLE': 0x80255A6C, 'PROBE': 0x80249480, 'BUTTONS': 0x80253274, 'MOTION': 0x80255F4C, 'MOTION2': 0x802560BC},
+        'clock': None,
+    },
+    'speak_jp': {
+        'title': 'Wii Speak Channel (Japan, HCFJ)',
+        'dol_size': 4372384,
+        'sdk': 2009,
+        'arena_lo': 0x80573E60,
+        'stack_end': 0x80571E48,
+        'lis': 0x8057,
+        'arena': [0x8010783C, 0x801078E4, 0x8010788C, 0x80107918],
+        'defs': {'SI_TYPES': 0x803EA1B0, 'SI_BUSY': 0x803EA198, 'SI_SHADOW': 0x803EA19C, 'FN_SIGETTYPE': 0x8016B3C0, 'FN_OSDISABLE': 0x8010DF28, 'FN_OSRESTORE': 0x8010DF50, 'WPAD_TBL': 0x8043AD10, 'KPAD_BASE': 0x804394E8, 'KPAD_STRIDE': 0x5C0},
+        'sites': {'POLL': 0x800E2718, 'SAMPLE': 0x800E2890, 'PROBE': 0x800E8C50, 'BUTTONS': 0x800E0214, 'MOTION': 0x800E2E00, 'MOTION2': 0x800E2F7C},
+        'site_words': {'MOTION': 0x3718FFFF, 'MOTION2': 0x3739FFFF},
+        'asm_defs': {'M1_DEST': 25, 'M1_LEFT': 24, 'M2_DEST': 27, 'M2_LEFT': 25},
+        'clock': None,
+        'hook_size': 0x2000,
+        'cdbsd': {'site': 0x800340B4, 'defs': {'VF_LOOKUP': 0x802CF044, 'VF_ATTACH': 0x802CC664, 'VF_SETNAME': 0x802CF0A4, 'VF_VOLUME': 0x802CC2A8, 'VF_DRV_PRESENT': 0x802CFDD4, 'VF_NOTIFY_INSERT': 0x802B43D4, 'VF_UNMOUNT': 0x802CB258, 'VF_MOUNT': 0x802CACC0, 'VF_DISK_TMPL': 0x8055C8A0, 'VF_LOCK_ON': 0x8055EA3C, 'VF_MUTEX': 0x8051FD00, 'FN_OSLOCKMUTEX': 0x8010F234, 'FN_OSUNLOCKMUTEX': 0x8010F310, 'FA_SD_STATE': 0x80558100, 'FA_SD_INIT': 0x802FA970, 'FA_SD_MOUNT': 0x802FABC0, 'FA_SD_READ': 0x802FAE60, 'FA_SD_BUSY': 0x8055EA6C, 'FA_SD_INFO': 0x802FB010, 'CDB_SD': 0x805586B0}},
+    },
 }
 CHANNELS['kirby']['site_words'] = CHANNELS['wiinoma']['site_words']
 CHANNELS['kirby']['asm_defs'] = CHANNELS['wiinoma']['asm_defs']
@@ -584,10 +687,34 @@ def dol_sizes(ch):
     return ch['dol_size'] if isinstance(ch['dol_size'], list) else [ch['dol_size']]
 
 
+def site_words_match(ch, data):
+    """the instructions the profile's hooks and patches expect are where it says"""
+    try:
+        secs = [struct.unpack_from('>III', data, 0x0 + 4 * i)[0:1] + struct.unpack_from('>I', data, 0x48 + 4 * i)
+                + struct.unpack_from('>I', data, 0x90 + 4 * i) for i in range(18)]
+
+        def w(a):
+            for o, b, n in secs:
+                if n and b <= a < b + n:
+                    return struct.unpack_from('>I', data, o + a - b)[0]
+        if not all(w(site_addr(ch, name)) == word for name, (word, _) in sites(ch).items()):
+            return False
+        for k in ('patches', 'debug_patches', 'feature_patches'):      # and the words the patches replace
+            for p in ch.get(k, []):
+                a, old = p[-4], p[-3]
+                if [w(a + 4 * i) for i in range(len(old))] != old:
+                    return False
+        return True
+    except struct.error:
+        return False
+
+
 def detect(data):
-    for key, ch in CHANNELS.items():
-        if len(data) in dol_sizes(ch):
-            return key, ch
+    hits = [(key, ch) for key, ch in CHANNELS.items() if len(data) in dol_sizes(ch)]
+    if len(hits) > 1:
+        hits = [(key, ch) for key, ch in hits if site_words_match(ch, data)]
+    if len(hits) == 1:
+        return hits[0]
     raise SystemExit('unknown main DOL (%d bytes); supported: %s' % (
         len(data), ', '.join('%s (%s)' % (c['title'], '/'.join(map(str, dol_sizes(c)))) for c in CHANNELS.values())))
 
@@ -803,7 +930,7 @@ class Dol:
 # `export` writes all of them for the Wii app (wii/).
 # Channels that misbehave when run from the SD card: the Wii app only looks for them on the NAND.
 NAND_ONLY = ('forecast', 'news', 'photo')
-PATCH_FEATURES = {      # channel: (id, name) of its 'patches'
+PATCH_FEATURES = {      # channel (any region: cmoc_jp is cmoc's): (id, name) of its 'patches'
     'forecast': ('tilt', 'Globe tilts both ways'),
     'evc': ('nolimit', 'No daily suggestion limit'),
     'cmoc': ('goldpants', 'Gold pants Miis can be used'),
@@ -862,7 +989,7 @@ class Plan:
         if ch.get('patches'):
             for addr, old, new, what in ch['patches']:
                 for j, (o, n) in enumerate(zip(old, new)):
-                    word(PATCH_FEATURES[self.key][0], addr + 4 * j, o, n)
+                    word(PATCH_FEATURES[self.key.split('_')[0]][0], addr + 4 * j, o, n)
         for addr, old, new, what in ch.get('debug_patches', []):
             for j, (o, n) in enumerate(zip(old, new)):
                 word('debugmenu', addr + 4 * j, o, n)
@@ -913,7 +1040,7 @@ class Plan:
         for f in ['pad'] + sorted(k for k in self.groups if k != 'pad'):
             name, on, needs = FEATURE_INFO[f]
             if name is None:
-                name = PATCH_FEATURES[self.key][1]
+                name = PATCH_FEATURES[self.key.split('_')[0]][1]
             out.append((f, name, on, needs))
         return out
 
@@ -1000,6 +1127,8 @@ def export(out, wads):
         name = os.path.basename(w)[:-4].replace(' (WiiLink)', '').replace(' (Channel)', '')
         if name.startswith('Photo Channel'):
             name = 'Photo Channel 1.1'
+        # the app's console font is ASCII
+        name = name.replace('\u0420\u0443\u0441\u0441\u043a\u0438\u0439', 'Russian').replace('Portugu\u00eas', 'Portugues')
         print('%-48s %016X %-10s %s' % (name, tid, p.key, ' '.join(f[0] for f in p.features())))
         feats = []
         if 'clock' in p.groups and tid & 0xFF != ord('E'):
@@ -1062,14 +1191,14 @@ def main():
     accu = '--accuweather' in sys.argv
     dbg = '--debug-menu' in sys.argv
     wl = '--wiilink' in sys.argv
-    ap = '--aplogo' in sys.argv
+    ap = '--newslogos' in sys.argv or '--aplogo' in sys.argv     # --aplogo: the old name
     extra = [f for f, on in (('calm', '--calm' in sys.argv), ('wiilink', wl)) if on]
     if len(a) != 3 or a[0] not in ('dol', 'wad'):
         raise SystemExit(__doc__)
     mode, src, dst = a
     if mode == 'dol':
         if accu or ap:
-            raise SystemExit('--accuweather and --aplogo need wad mode (they change other contents)')
+            raise SystemExit('--accuweather and --newslogos need wad mode (they change other contents)')
         patched = patch_dol(main_dol(open(src, 'rb').read()), clock, feed, dbg, extra)
         open(dst, 'wb').write(patched)
         return
@@ -1081,7 +1210,7 @@ def main():
     if accu and key != 'forecast':
         raise SystemExit('--accuweather is only for the Forecast Channel')
     if ap and key != 'news':
-        raise SystemExit('--aplogo is only for the News Channel')
+        raise SystemExit('--newslogos is only for the News Channel')
     patched = patch_dol(main, clock, feed, dbg, extra)
     open(app, 'wb').write(patched)
     sys.path.insert(0, HERE)
@@ -1091,7 +1220,7 @@ def main():
         new = banner.patch_opening(open(bnr, 'rb').read())
         open(bnr, 'wb').write(new)
         print('banner: WeatherNews logo -> AccuWeather')
-    rf = [f for f, on in (('accuweather', accu), ('wiilink', wl), ('aplogo', ap)) if on]
+    rf = [f for f, on in (('accuweather', accu), ('wiilink', wl), ('newslogos', ap)) if on]
     if rf:
         import res
         print('resources (%s): changed %s' % (', '.join(rf), ', '.join(res.apply(tmp + '/u', rf, skip=('00000001.app',)))))

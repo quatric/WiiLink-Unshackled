@@ -35,7 +35,8 @@ EDITS = {
         'layout': 'arc/blyt/banner.brlyt',
         'pane': ('wn_logo', 140.0, 20.0, 80.0),     # centre origin, on the 0-160 white plate
         'mat': 'wn_logo',
-        'text': ('supported by weathernews', 'supported by AccuWeather'),
+        'text': [('supported by weathernews', 'supported by AccuWeather'),
+                 ('supported by \u30a6\u30a7\u30b6\u30fc\u30cb\u30e5\u30fc\u30b9', 'supported by AccuWeather')],  # Japan
     },
     'meta/icon.bin': {
         'tpl': ('arc/timg/icon_logo_wn.tpl', 'icon_logo.tpl'),
@@ -203,14 +204,27 @@ def edit_layout(d, pane, mat, text):
                 d[off + 0x24:off + 0x28] = struct.pack('>f', pane[3])
             done.add('pane')
         elif mg == b'txt1' and text:
-            sl, = struct.unpack('>H', d[off + 0x4E:off + 0x50])
             so, = struct.unpack('>I', d[off + 0x58:off + 0x5C])
-            old, new = (t.encode('utf-16-be') for t in text)
-            if bytes(d[off + so:off + so + len(old)]) == old:
-                assert len(new) == len(old)
-                d[off + so:off + so + len(new)] = new
+            for t_old, t_new in (text if isinstance(text, list) else [text]):
+                old, new = t_old.encode('utf-16-be'), t_new.encode('utf-16-be')
+                if bytes(d[off + so:off + so + len(old) + 2]) != old + b'\0\0':
+                    continue
+                if len(new) == len(old):
+                    d[off + so:off + so + len(new)] = new
+                else:                       # the string ends the section: rebuild it the new size
+                    if sz - (so + len(old) + 2) >= 4:
+                        raise SystemExit('layout: text %r is not at the end of its pane' % t_old)
+                    sec = bytearray(d[off:off + so]) + new + b'\0\0'
+                    while len(sec) % 4:
+                        sec.append(0)
+                    struct.pack_into('>I', sec, 4, len(sec))
+                    struct.pack_into('>HH', sec, 0x4C, len(new) + 2, len(new) + 2)
+                    d[off:off + sz] = sec
+                    sz = len(sec)
                 done.add('text')
+                break
         off += sz
+    struct.pack_into('>I', d, 8, len(d))            # file size
     want = {'mat', 'pane'} | ({'text'} if text else set())
     if done != want:
         raise SystemExit('layout: missing %s' % sorted(want - done))
