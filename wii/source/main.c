@@ -10,6 +10,9 @@
 #include <string.h>
 #include <wiiuse/wpad.h>
 
+#include <input_wii.h>
+#include <wiiupdate.h>
+
 #include "nand.h"
 #include "patchdb.h"
 #include "patches_bin.h"
@@ -17,8 +20,9 @@
 #include "sdbin.h"
 #include "title.h"
 
-#define VERSION "1.0"
+#define VERSION "1.1"
 #define MAX_TITLES 48
+#define LIST_ROWS 14                    /* channels shown at once; Left / Right jump a page */
 
 static void *xfb;
 static GXRModeObj *rmode;
@@ -44,30 +48,63 @@ static void video_init(void)
         VIDEO_WaitVSync();
 }
 
+#define DPAD (WPAD_BUTTON_UP | WPAD_BUTTON_DOWN | WPAD_BUTTON_LEFT | WPAD_BUTTON_RIGHT)
+
+/* Every controller libwiiinput knows (Wii Remote, Classic Controller, GameCube pad, USB
+ * keyboard, ...) as WPAD_BUTTON_* bits; a held D-pad repeats, as in GodModeWii. */
+static u32 buttons_down(void)
+{
+    static u32 repeat_mask;
+    static int hold_frames;
+
+    INPUT_Update();
+    u32 down = INPUT_ButtonsDown();
+    u32 held = INPUT_ButtonsHeld() & DPAD;
+    if (!held || (down & DPAD)) {
+        hold_frames = 0;
+        repeat_mask = held;
+        return down;
+    }
+    if (++hold_frames > 22 && hold_frames % 3 == 0)
+        down |= held & repeat_mask;
+    return down;
+}
+
 static int read_keys(void)
 {
-    WPAD_ScanPads();
-    PAD_ScanPads();
-    u32 w = 0;
-    for (int i = 0; i < 4; i++)
-        w |= WPAD_ButtonsDown(i);
-    u16 g = PAD_ButtonsDown(0);
+    u32 w = buttons_down();
     int k = 0;
-    if (w & (WPAD_BUTTON_UP | WPAD_CLASSIC_BUTTON_UP) || g & PAD_BUTTON_UP)
+    if (w & WPAD_BUTTON_UP)
         k |= K_UP;
-    if (w & (WPAD_BUTTON_DOWN | WPAD_CLASSIC_BUTTON_DOWN) || g & PAD_BUTTON_DOWN)
+    if (w & WPAD_BUTTON_DOWN)
         k |= K_DOWN;
-    if (w & (WPAD_BUTTON_LEFT | WPAD_CLASSIC_BUTTON_LEFT) || g & PAD_BUTTON_LEFT)
+    if (w & WPAD_BUTTON_LEFT)
         k |= K_LEFT;
-    if (w & (WPAD_BUTTON_RIGHT | WPAD_CLASSIC_BUTTON_RIGHT) || g & PAD_BUTTON_RIGHT)
+    if (w & WPAD_BUTTON_RIGHT)
         k |= K_RIGHT;
-    if (w & (WPAD_BUTTON_A | WPAD_CLASSIC_BUTTON_A) || g & PAD_BUTTON_A)
+    if (w & WPAD_BUTTON_A)
         k |= K_A;
-    if (w & (WPAD_BUTTON_B | WPAD_CLASSIC_BUTTON_B) || g & PAD_BUTTON_B)
+    if (w & WPAD_BUTTON_B)
         k |= K_B;
-    if (w & (WPAD_BUTTON_HOME | WPAD_CLASSIC_BUTTON_HOME) || g & PAD_BUTTON_START)
+    if (w & WPAD_BUTTON_HOME)
         k |= K_HOME;
     return k;
+}
+
+/* Up / Down move one row (wrapping), Left / Right a page of `page` rows (stopping at the ends). */
+static int move(int sel, int n, int page, int k)
+{
+    if (page < 1)
+        page = 1;
+    if (k & K_UP)
+        sel = (sel + n - 1) % n;
+    if (k & K_DOWN)
+        sel = (sel + 1) % n;
+    if (k & K_LEFT)
+        sel = sel > page ? sel - page : 0;
+    if (k & K_RIGHT)
+        sel = sel + page < n - 1 ? sel + page : n - 1;
+    return sel;
 }
 
 static int wait_key(void)
@@ -151,7 +188,7 @@ static void channel_menu(title_t *tt, const sd_keys_t *keys)
         printf("%s\n", t->name);
         printf("Title %08X-%08X on the %s, %s\n\n", (unsigned)(tt->tid >> 32), (unsigned)tt->tid,
                tt->on_sd ? "SD card" : "NAND",
-               tt->state == ST_CLEAN ? "\x1b[32mclean (as WiiLink made it)\x1b[37m" : "\x1b[33mpatched\x1b[37m");
+               tt->state == ST_CLEAN ? "\x1b[32munpatched (as WiiLink made it)\x1b[37m" : "\x1b[33mpatched\x1b[37m");
         for (int i = 0; i < t->nfeat; i++) {
             const pdb_feat_t *f = &t->feat[i];
             bool on = mask >> i & 1, live = eff >> i & 1;
@@ -160,16 +197,13 @@ static void channel_menu(title_t *tt, const sd_keys_t *keys)
         }
         printf("\n%s Patch with these\n", sel == t->nfeat ? "\x1b[33m>" : " ");
         printf("\x1b[37m%s %s\n", sel == t->nfeat + 1 ? "\x1b[33m>" : " ",
-               tt->state == ST_PATCHED ? "Restore the clean copy" : "(Restore the clean copy: it is clean)");
+               tt->state == ST_PATCHED ? "Restore the unpatched copy" : "(Restore the unpatched copy: it is unpatched)");
         printf("\x1b[37m%s Back\x1b[37m\n", sel == t->nfeat + 2 ? "\x1b[33m>" : " ");
-        printf("\n\x1b[36mUp/Down: choose  A: tick / do it  B: back\x1b[37m\n");
+        printf("\n\x1b[36mUp/Down: choose  Left/Right: jump  A: tick / do it  B: back\x1b[37m\n");
         int k = wait_key();
         if (k & K_HOME || k & K_B)
             return;
-        if (k & K_UP)
-            sel = (sel + nrows - 1) % nrows;
-        if (k & K_DOWN)
-            sel = (sel + 1) % nrows;
+        sel = move(sel, nrows, nrows - 1, k);
         if (!(k & K_A))
             continue;
         if (sel < t->nfeat) {
@@ -183,14 +217,14 @@ static void channel_menu(title_t *tt, const sd_keys_t *keys)
         if (sel == t->nfeat) {
             char q[300];
             snprintf(q, sizeof(q), "Patch %s with the ticked features?%s", t->name,
-                     tt->state == ST_CLEAN ? "\nThe clean copy is backed up to " BACKUP_ROOT " first." :
-                                             "\nIt is patched again from the backed-up clean copy.");
+                     tt->state == ST_CLEAN ? "\nThe unpatched copy is backed up to " BACKUP_ROOT " first." :
+                                             "\nIt is patched again from the backed-up unpatched copy.");
             if (!confirm(q))
                 continue;
             printf("\n");
             ok = title_patch(tt, eff, keys, say, pct, err, sizeof(err));
         } else {
-            if (tt->state != ST_PATCHED || !confirm("Put the clean copy back?"))
+            if (tt->state != ST_PATCHED || !confirm("Put the unpatched copy back?"))
                 continue;
             printf("\n");
             ok = title_restore(tt, keys, say, err, sizeof(err));
@@ -206,11 +240,10 @@ static void channel_menu(title_t *tt, const sd_keys_t *keys)
 
 /* ---------------------------------------------------------------- start */
 
-int main(void)
+int main(int argc, char **argv)
 {
     video_init();
-    WPAD_Init();
-    PAD_Init();
+    INPUT_InitEx(INPUT_INIT_NO_POINTER | INPUT_INIT_NO_MOUSE);
     SYS_SetPowerCallback(power_cb);
     SYS_SetResetCallback(reset_cb);
     header();
@@ -226,6 +259,14 @@ int main(void)
     if (!fatInitDefault())
         fail_exit("No SD card: it is needed for the backups.");
 
+    WIIUPDATE_SetAppPath(argc > 0 ? argv[0] : NULL);
+    if (WIIUPDATE_CheckConsole("quatric", "WiiLink-Unshackled", VERSION, buttons_down) == WIIUPDATE_UPDATED) {
+        nand_exit();
+        fatUnmount("sd:/");
+        INPUT_Shutdown();
+        return 0;
+    }
+
     sd_keys_t keys;
     char why[160];
     bool have_keys = sd_keys_get(&keys, why, sizeof(why));
@@ -233,34 +274,35 @@ int main(void)
     static title_t titles[MAX_TITLES];
     say("Looking for WiiLink's channels...");
     int n = titles_scan(titles, MAX_TITLES, have_keys ? &keys : NULL);
-    int sel = 0;
+    int sel = 0, top = 0;
     while (!quit_now) {
         header();
         if (!n) {
             printf("None of the channels this version knows were found.\n\n"
                    "It patches WiiLink's builds of: Forecast, News, Everybody Votes, Check Mii Out,\n"
                    "Nintendo, Food / Demae, Digicam Print / Photo Prints, Today and Tomorrow,\n"
-                   "Wii no Ma / Wii Room, and the Photo Channel 1.1. Install them from WiiLink's\n"
-                   "WADs first.\n\nPress HOME / START to exit.\n");
+                   "Wii no Ma / Wii Room, Kirby TV, Wii Speak (USA), Internet (USA), and the\n"
+                   "Photo Channel 1.1. Install them from WiiLink's WADs first.\n\n"
+                   "Press HOME / START to exit.\n");
             if (wait_key() & K_HOME)
                 break;
             continue;
         }
         printf("Channels found (%d). Pick one:\n\n", n);
-        for (int i = 0; i < n; i++)
+        top = sel < top ? sel : sel >= top + LIST_ROWS ? sel - LIST_ROWS + 1 : top;
+        printf("%s\n", top > 0 ? "  \x1b[36m(more above)\x1b[37m" : "");
+        for (int i = top; i < n && i < top + LIST_ROWS; i++)
             printf("%s %-46.46s %s  %s\x1b[37m\n", i == sel ? "\x1b[33m>" : " ", titles[i].t->name, where(&titles[i]),
-                   titles[i].state == ST_CLEAN ? "clean" : "patched");
+                   titles[i].state == ST_CLEAN ? "unpatched" : "patched");
+        printf("%s\n", top + LIST_ROWS < n ? "  \x1b[36m(more below)\x1b[37m" : "");
         printf("\nBackups: " BACKUP_ROOT "\n");
         if (!have_keys)
             printf("\x1b[33mChannels on the SD card aren't listed: %s\x1b[37m\n", why);
-        printf("\n\x1b[36mUp/Down: choose  A: open  HOME / START: exit\x1b[37m\n");
+        printf("\n\x1b[36mUp/Down: choose  Left/Right: jump  A: open  HOME / START: exit\x1b[37m\n");
         int k = wait_key();
         if (k & K_HOME)
             break;
-        if (k & K_UP)
-            sel = (sel + n - 1) % n;
-        if (k & K_DOWN)
-            sel = (sel + 1) % n;
+        sel = move(sel, n, LIST_ROWS - 1, k);
         if (k & K_A)
             channel_menu(&titles[sel], have_keys ? &keys : NULL);
     }
@@ -269,7 +311,7 @@ int main(void)
     printf("Exiting...\n");
     nand_exit();
     fatUnmount("sd:/");
-    WPAD_Shutdown();
+    INPUT_Shutdown();
     if (power_off)
         SYS_ResetSystem(SYS_POWEROFF, 0, 0);
     return 0;

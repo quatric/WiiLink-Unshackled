@@ -33,13 +33,15 @@ LDFLAGS	=	-g $(MACHDEP) -Wl,-Map,$(notdir $@).map
 #---------------------------------------------------------------------------------
 # any extra libraries we wish to link with the project
 #---------------------------------------------------------------------------------
-LIBS	:=	-lfat -lwiiuse -lbte -logc -lm
+# libwiiupdate (update check), libwiiinput (every controller as WPAD_BUTTON_*, built as
+# libinput-wii.a): git submodules, built by the rules below
+LIBS	:=	-lwiiupdate -linput-wii -lwiikeyboard -lfat -lwiiuse -lbte -logc -lm
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing
 # include and lib
 #---------------------------------------------------------------------------------
-LIBDIRS	:=
+LIBDIRS	:=	$(CURDIR)/libwiiupdate $(CURDIR)/libwiiinput
 
 #---------------------------------------------------------------------------------
 # no real need to edit anything past this point unless you need to add additional
@@ -96,14 +98,23 @@ export OUTPUT	:=	$(CURDIR)/$(TARGET)
 .PHONY: $(BUILD) clean hbc
 
 #---------------------------------------------------------------------------------
-$(BUILD):
+$(BUILD): libs
 	@[ -d $@ ] || mkdir -p $@
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
+
+.PHONY: libs
+libs:
+	@[ -f libwiiinput/Makefile ] && [ -f libwiiupdate/Makefile ] || \
+		{ echo "libwiiinput / libwiiupdate missing: git submodule update --init"; exit 1; }
+	@$(MAKE) --no-print-directory -C libwiiinput
+	@$(MAKE) --no-print-directory -C libwiiupdate
 
 #---------------------------------------------------------------------------------
 clean:
 	@echo clean ...
 	@rm -fr $(BUILD) $(OUTPUT).elf $(OUTPUT).dol apps
+	@$(MAKE) --no-print-directory -C libwiiinput clean
+	@$(MAKE) --no-print-directory -C libwiiupdate clean
 
 #---------------------------------------------------------------------------------
 # the Homebrew Channel folder: apps/WiiLinkUnshackled/{boot.dol,meta.xml,icon.png}

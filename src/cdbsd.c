@@ -26,6 +26,12 @@
  *    present and tell the disk manager it is inserted.
  *  - CDB's "SD mounted" flag is set, which lets it open records on SD.
  *
+ * The Wii Speak Channel (USA) has the same Message Board scan, VF library and
+ * SD card driver, but never starts the driver (FA_SD_INIT is defined for it).
+ * There drv_init starts it for the new drive the first time, and points it at
+ * each new drive after that: the driver's card insert / eject callbacks
+ * report to that drive, and are kept off (0) while there is none.
+ *
  * Built soft-float.  Addresses come in as -D macros (build.py 'cdbsd').
  */
 typedef unsigned int u32;
@@ -89,6 +95,12 @@ static s32 drv_init(u32 disk)
 {
     if (!disk)
         return -20;
+#ifdef FA_SD_INIT
+    if (W(FA_SD_STATE) & 1)
+        W(FA_SD_STATE + 12) = disk;             /* the drive the driver reports to */
+    else if (CALL1(FA_SD_INIT, disk))
+        return -20;
+#endif
     CALL2(VF_DRV_PRESENT, disk, 1);
     CALL1(VF_NOTIFY_INSERT, disk);
     return 0;
@@ -125,10 +137,18 @@ void cdbsd_mount(void)
     s32 idx = -1;
 
     W(CDB_SD + 4) = 0;                              /* "SD is mounted to CDB" */
+#ifdef FA_SD_INIT
+    W(FA_SD_STATE + 12) = 0;                        /* the old drive goes */
+#endif
     if (CALL1(VF_LOOKUP, name) != -1)
         CALL1(VF_UNMOUNT, name);                    /* unmount and detach */
+#ifdef FA_SD_INIT
+    if ((W(FA_SD_STATE) & 1) && W(FA_SD_STATE + 16) == 0)
+        return;                                     /* driver up, no card */
+#else
     if ((W(FA_SD_STATE) & 1) == 0 || W(FA_SD_STATE + 16) == 0)
         return;                                     /* driver not up / no card */
+#endif
 
     lock = W(VF_LOCK_ON);
     if (lock)
@@ -152,6 +172,10 @@ void cdbsd_mount(void)
     }
     if (lock)
         CALL1(FN_OSUNLOCKMUTEX, VF_MUTEX);
-    if (idx != -1 && !W(CDB_SD + 4))
+    if (idx != -1 && !W(CDB_SD + 4)) {
+#ifdef FA_SD_INIT
+        W(FA_SD_STATE + 12) = 0;
+#endif
         CALL1(VF_UNMOUNT, name);
+    }
 }

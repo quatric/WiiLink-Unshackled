@@ -1,6 +1,6 @@
 # WiiLink-Unshackled
 
-Adds Classic Controller and GameCube controller support to WiiLink's channels and to the Photo Channel:
+Adds Classic Controller and GameCube controller support to WiiLink's channels, the Internet Channel and the Photo Channel:
 
 | Channel | Title | Main DOL (content 1) |
 |---|---|---|
@@ -15,6 +15,9 @@ Adds Classic Controller and GameCube controller support to WiiLink's channels an
 | Today and Tomorrow Channel (Japan) | HAVJ | 4,247,616 bytes |
 | Today and Tomorrow Channel (PAL) | HAVP | 3,384,512 bytes |
 | Wii no Ma / Wii Room (every language) | HCIJ | 8,929,568 bytes |
+| Kirby TV Channel | HCMP | 4,825,024 bytes |
+| Wii Speak Channel (USA, Wiimmfi) | HCFE | 4,369,376 bytes |
+| Internet Channel (USA) | HADE | 9,180,992 bytes |
 
 Sizes are for the uncompressed DOL. Most of these WADs store content 1 LZ-compressed; `build.py` unpacks it and writes the patched DOL back uncompressed (the boot program loads either).
 
@@ -77,6 +80,7 @@ The Check Mii Out Channel still contains its developers' debug overlay. The over
 
 * **Up/Down** moves the `>` cursor, **A** turns the selected entry on or off (`+` marks entries that are on), and **B** closes the overlay.
 * The channel still sees these button presses too, so close the overlay before using the channel normally.
+* **Debug Save Data Access**, **Debug Menu** and **Rare Message Check** switch to developer scenes that freeze a retail console, so the patch makes those three entries do nothing.
 * Entries include Console, Debug Save Data Access, Rare Message Check, Safety Frame, Save Data Clear, All Your Base, Debug Print, Debug See Result, Debug Contest Off Limit, the Settings/Startup/Request/Response/Cache Dumps, Cache Clear, No Cache, NWC24 Tmp Error Occur and Disp Mii Info.
 * **All Your Base** makes the channel treat every Mii as if it had been made on this Wii. It overrides the channel's check of a Mii's creator ID, so the Mii doesn't have to come from this console.
 
@@ -96,9 +100,15 @@ The channel reads the Message Board through Nintendo's CDB library, the same one
 
 Tested in Dolphin with a photo post that exists only on the SD card: it was found and its thumbnail was shown, also when the view was opened again. Without a card, NAND photos showed as before. The SD post was made by a script in the format CDB reads, not by the Wii Menu itself.
 
+## Wii Speak Channel: Message Board photos on the SD card
+
+The Wii Speak Channel (USA) reads Message Board photos through the same CDB scan as the Photo Channel. It looks for NAND posts only (`li r10,1` at `0x800340B4`). The same `cdbsd` hook makes it look on the SD card as well. Wii Speak has the same VF library and SD card driver, but nothing in the channel ever starts that driver. With `FA_SD_INIT` in its profile, `cdbsd.c` starts the driver for the first SD drive it attaches. It then points the driver at each new drive, so the driver's card insert/eject callbacks report to a live drive, or to none.
+
+Not tested in a running channel: the scan only runs when the photo viewer (`photoAppre`) asks for it, which is in an online chat room. The addresses were found by signature from the Photo Channel's, `build.py` builds and checks every original word, and the channel boots with the patch in Dolphin, with emulated Wii Speak and an SD card.
+
 ## Wii app
 
-`wii/` is a Homebrew Channel app that does the same on the console: it finds WiiLink's channels on the NAND (and on the SD card as `content.bin`, except the Forecast, News and Photo Channels), lets you tick the features you want, backs up the clean copy to the SD card, patches content 1 and packs it again with WiiLink's LZ type. It can put the clean copy back. It only patches WiiLink's own builds, recognised by their SHA-1. See [wii/README.md](wii/README.md).
+`wii/` is a Homebrew Channel app that does the same on the console: it finds WiiLink's channels on the NAND (and on the SD card as `content.bin`, except the Forecast, News and Photo Channels), lets you tick the features you want, backs up the unpatched copy to the SD card, patches content 1 and packs it again with WiiLink's LZ type. It can put the unpatched copy back. It only patches WiiLink's own builds, recognised by their SHA-1. See [wii/README.md](wii/README.md).
 
 `python3 build.py export wii/data/patches.bin <WADs...>` writes the patch list it carries.
 
@@ -137,9 +147,9 @@ Five hooks branch out of KPAD/WPAD:
 | BUTTONS | KPAD button compose | ORs Classic Controller buttons into the Wii Remote buttons. |
 | MOTION | After each sample is copied out | Writes the stick pointer and twist into the caller's copy only, so KPAD's IR tracking state is never touched. |
 
-The code and 0x200 bytes of state take the first 0x1800 bytes of the OS arena (0x2000 in the Nintendo, Everybody Votes and Photo Channels). The state is split into 0x00 for gc.c, 0x40 for motion.c and 0x100 for kbd.c. That's `__ArenaLo`, right above the debugger stack. OSInit's arena constants (each a `lis`/`addi` pair) move up past it, so the game never allocates over it.
+The code and 0x200 bytes of state take the first 0x1800 bytes of the OS arena (0x2000 in the Nintendo, Everybody Votes, Photo and Wii Speak Channels; 0x1818 in Kirby TV, whose `__ArenaLo` is only 8-byte aligned). The state is split into 0x00 for gc.c, 0x40 for motion.c and 0x100 for kbd.c. That's `__ArenaLo`, right above the debugger stack. OSInit's arena constants (each a `lis`/`addi` pair) move up past it, so the game never allocates over it.
 
-Wii no Ma / Wii Room needs two exceptions:
+Wii no Ma / Wii Room (and Kirby TV, the same OS) needs two exceptions:
 
 * **Text slot:** code in a data section doesn't run under its boot program, so the hook section goes in the first free text slot (slot 2, `text_slot`). Its bytes are inserted into the stream between text slot 1 and data slot 7.
 * **Arena guard:** its OS writes the 0x800 bytes just below `__ArenaLo`, which the original layout leaves unused. The arena therefore starts 0x2000 past the hooks (`arena_guard`).
@@ -152,7 +162,7 @@ The hook section therefore takes the last slot (data 17), and its bytes start ex
 
 ### Two SDK versions
 
-Forecast, News, Everybody Votes, Check Mii Out and Today and Tomorrow (Japan) have the 2007 KPAD. The Nintendo Channel uses a 2009 KPAD, built with `-DSDK2009`:
+Forecast, News, Everybody Votes, Check Mii Out and Today and Tomorrow (Japan) have the 2007 KPAD. The Internet Channel's November 2006 KPAD is the same code with the channel in r28 rather than r27 (`K_CHAN`), and its WPAD keeps the device type and status at 2049/2044 (`WPAD_TYPE`/`WPAD_STATUS`). The Nintendo Channel uses a 2009 KPAD, built with `-DSDK2009`:
 
 * **Sample ring:** 16 inline slots at `k+0x13C` plus an optional external buffer (`k+0x4BC`/`k+0x4C0`), instead of 16 slots at `k+0x110`.
 * **Sample count:** keeps one already-read sample, so "nothing new" is a count of 1, not 0.
@@ -160,9 +170,9 @@ Forecast, News, Everybody Votes, Check Mii Out and Today and Tomorrow (Japan) ha
 
 Later KPADs keep the 2009 code's shape, so they build with `-DSDK2009` too. Each profile passes its differences to `hooks.S` and `gc.c` through `asm_defs`.
 
-* **September 2008** (Photo, Food/Demae, Digicam/Photo Prints): see below.
+* **September 2008** (Photo, Food/Demae, Digicam/Photo Prints, Wii Speak): see below.
 * **June 2009** (Today and Tomorrow, PAL): an 8-byte bigger KPAD block (0x578) and a 240-byte KPADiRead frame (`POLL_FRAME`).
-* **August 2010** (Wii no Ma / Wii Room): WPAD samples grow to 0x42 bytes for MotionPlus. The ring moves to `k+0x180` (index/count `k+0x17A`/`k+0x17B`, external buffer `k+0x5A0`/`k+0x5A4`), the format byte moves from `+0x36` to `+0x40`, and the count is used up completely (no kept sample). The output `KPADStatus` is 0xF0 bytes, the block is 0x688 bytes, and WPAD's device type/status move to 2309/2304. Every hook site uses different registers, and OSInit splits the arena start's `lis`/`addi`, so that arena entry is a `(lis, addi)` pair.
+* **August 2010** (Wii no Ma / Wii Room; Kirby TV's December 2009 KPAD is the same code): WPAD samples grow to 0x42 bytes for MotionPlus. The ring moves to `k+0x180` (index/count `k+0x17A`/`k+0x17B`, external buffer `k+0x5A0`/`k+0x5A4`), the format byte moves from `+0x36` to `+0x40`, and the count is used up completely (no kept sample). The output `KPADStatus` is 0xF0 bytes, the block is 0x688 bytes, and WPAD's device type/status move to 2309/2304. Every hook site uses different registers, and OSInit splits the arena start's `lis`/`addi`, so that arena entry is a `(lis, addi)` pair.
 
 The Photo Channel's September 2008 KPAD is the same code with two differences. The per-channel KPAD block is 0x5C0 bytes instead of 0x570, and the copy-out loops use different registers. The profile passes those registers to `hooks.S` through `asm_defs` (`M1_DEST`/`M1_LEFT`, `M2_DEST`/`M2_LEFT`), and the replaced loop words through `site_words`.
 

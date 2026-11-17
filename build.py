@@ -169,6 +169,11 @@ CHANNELS = {
               0x38800001,   # li   r4,1
               0x48000641],  # bl   0x80287E04        set it
              'debug menu: 1+2 opens the debug overlay'),
+            # Three of the overlay's items switch to developer scenes that hang a retail
+            # console: keep the item's reset, skip the scene change
+            (0x8028E52C, [0x4BD7AE55], [0x4800000C], 'debug menu: "Debug Save Data Access" does nothing (scene 5)'),
+            (0x8028E554, [0x4BD7AE2D], [0x4800000C], 'debug menu: "Debug Menu" does nothing (scene 3)'),
+            (0x8028E57C, [0x4BD7AE05], [0x4800000C], 'debug menu: "Rare Message Check" does nothing (scene 4)'),
         ],
     },
     # 2009 SDK: KPAD was rewritten (see src/hooks.S); WPAD/SI/OS are the same code
@@ -386,7 +391,110 @@ CHANNELS = {
         'pointer_vec': True,
         'clock': None,
     },
+    # Wii Speak Channel (USA, Wiimmfi): the Food Channel's Sept 2008 KPAD
+    'speak': {
+        'title': 'Wii Speak Channel (USA, HCFE)',
+        'dol_size': 4369376,
+        'sdk': 2009,
+        'arena_lo': 0x805732C0, 'stack_end': 0x805712A8, 'lis': 0x8057,
+        'arena': [0x8010783C, 0x801078E4, 0x8010788C, 0x80107918],
+        'defs': {
+            'SI_TYPES': 0x803E95F0,
+            'SI_BUSY': 0x803E95D8,
+            'SI_SHADOW': 0x803E95DC,
+            'FN_SIGETTYPE': 0x8016B3C0,
+            'FN_OSDISABLE': 0x8010DF28,
+            'FN_OSRESTORE': 0x8010DF50,
+            'WPAD_TBL': 0x8043A190,
+            'KPAD_BASE': 0x80438968,
+            'KPAD_STRIDE': 0x5C0,
+        },
+        'sites': {'POLL': 0x800E2718, 'SAMPLE': 0x800E2890, 'PROBE': 0x800E8C50,
+                  'BUTTONS': 0x800E0214, 'MOTION': 0x800E2E00, 'MOTION2': 0x800E2F7C},
+        'site_words': {'MOTION': 0x3718FFFF, 'MOTION2': 0x3739FFFF},
+        'asm_defs': {'M1_DEST': 25, 'M1_LEFT': 24, 'M2_DEST': 27, 'M2_LEFT': 25},
+        'clock': None,
+        'hook_size': 0x2000,
+        # Wii Message Board photos from the SD card too (src/cdbsd.c): the Photo
+        # Channel's scan, and an SD card driver the channel never starts
+        'cdbsd': {
+            'site': 0x800340B4,                 # li r10,1: CDBDatabaseSearch(..., NAND only)
+            'defs': {
+                'VF_LOOKUP': 0x802CF044,
+                'VF_ATTACH': 0x802CC664,
+                'VF_SETNAME': 0x802CF0A4,
+                'VF_VOLUME': 0x802CC2A8,
+                'VF_DRV_PRESENT': 0x802CFDD4,
+                'VF_NOTIFY_INSERT': 0x802B43D4,
+                'VF_UNMOUNT': 0x802CB258,
+                'VF_MOUNT': 0x802CACC0,
+                'VF_DISK_TMPL': 0x8055BD20,
+                'VF_LOCK_ON': 0x8055DEBC,
+                'VF_MUTEX': 0x8051F180,
+                'FN_OSLOCKMUTEX': 0x8010F234,
+                'FN_OSUNLOCKMUTEX': 0x8010F310,
+                'FA_SD_STATE': 0x80557580,
+                'FA_SD_INIT': 0x802FA970,       # driver start (opens the SD slot, card callbacks)
+                'FA_SD_MOUNT': 0x802FABC0,
+                'FA_SD_READ': 0x802FAE60,
+                'FA_SD_BUSY': 0x8055DEEC,
+                'FA_SD_INFO': 0x802FB010,
+                'CDB_SD': 0x80557B30,
+            },
+        },
+    },
+    # Kirby TV Channel (HCMP): a Dec 2009 KPAD, the same code as Wii Room's
+    'kirby': {
+        'title': 'Kirby TV Channel (HCMP)',
+        'dol_size': 4825024,
+        'sdk': 2009,
+        'hook_size': 0x1818,            # __ArenaLo is only 8-aligned: end the hooks on 32
+        'arena_lo': 0x80572E48, 'stack_end': 0x80570E48, 'lis': 0x8057,
+        'arena_guard': 0x2000,
+        'text_slot': True,
+        'arena': [(0x80144D78, 0x80144D80), 0x80144EE4, 0x80144F6C],
+        'defs': {
+            'SI_TYPES': 0x8047A840,
+            'SI_BUSY': 0x8047A828,
+            'SI_SHADOW': 0x8047A82C,
+            'FN_SIGETTYPE': 0x80155340,
+            'FN_OSDISABLE': 0x8014ADF0,
+            'FN_OSRESTORE': 0x8014AE30,
+            'WPAD_TBL': 0x804EFEF0,
+            'KPAD_BASE': 0x804F60A8,
+            'KPAD_STRIDE': 0x688,
+        },
+        'sites': {'POLL': 0x8019DFB0, 'SAMPLE': 0x8019E154, 'PROBE': 0x80187620,
+                  'BUTTONS': 0x8019AFF4, 'MOTION': 0x8019E49C, 'MOTION2': 0x8019E65C},
+        'site_words': None,             # Wii Room's (filled in below)
+        'asm_defs': None,
+        'pointer_vec': True,
+        'clock': None,
+    },
+    # Internet Channel (USA): a Nov 2006 KPAD, the 2007 code with the channel in
+    # r28 (not r27) and a WPAD control block laid out differently; content 1 is unpacked
+    'internet': {
+        'title': 'Internet Channel (USA, HADE)',
+        'dol_size': 9180992,
+        'arena_lo': 0x80A63980, 'stack_end': 0x80A61968, 'lis': 0x80A6,
+        'arena': [0x80638A38, 0x80638AE0, 0x80638A88, 0x80638B14],
+        'defs': {
+            'SI_TYPES': 0x808A2390,
+            'SI_BUSY': 0x808A2378,
+            'SI_SHADOW': 0x808A237C,
+            'FN_SIGETTYPE': 0x80644AD4,
+            'FN_OSDISABLE': 0x8063E274,
+            'FN_OSRESTORE': 0x8063E29C,
+            'WPAD_TBL': 0x809A2910,
+        },
+        'sites': {'POLL': 0x80693424, 'SAMPLE': 0x80693528, 'PROBE': 0x80653930,
+                  'BUTTONS': 0x806939D0, 'MOTION': 0x80693B04},
+        'asm_defs': {'K_CHAN': 28, 'WPAD_TYPE': 2049, 'WPAD_STATUS': 2044},
+        'clock': None,
+    },
 }
+CHANNELS['kirby']['site_words'] = CHANNELS['wiinoma']['site_words']
+CHANNELS['kirby']['asm_defs'] = CHANNELS['wiinoma']['asm_defs']
 HOOK_SIZE = 0x1800              # default: code + state, carved from the arena start
 STATE_SIZE = 0x200             # gc.c 0x00-0x40, motion.c 0x40-0x100, kbd.c 0x100-0x200
 

@@ -254,6 +254,11 @@ hook_motion2:
 
 /* ---- 2007 SDK (KPAD/WPAD built June 2007) ---- */
 
+/* KPADiRead's channel register: r27, but r28 in the Nov 2006 KPAD (Internet Channel) */
+#ifndef K_CHAN
+#define K_CHAN 27
+#endif
+
 /* KPADiRead entry (r3 = channel): GameCube SI poller */
     .globl hook_poll
 hook_poll:
@@ -265,12 +270,12 @@ hook_poll:
     stwu    1, -192(1)              /* replaced instruction */
     b       RET_POLL
 
-/* KPADiRead sample-count check (r31 = KPAD base, r27 = channel): GC pad -> CC samples */
+/* KPADiRead sample-count check (r31 = KPAD base, K_CHAN = channel): GC pad -> CC samples */
     .globl hook_sample
 hook_sample:
     SAVE
     mr      3, 31
-    mr      4, 27
+    mr      4, K_CHAN
     bl      gc_sample
     RESTORE_ALL
     lwz     0, 0x0c(1)
@@ -323,7 +328,7 @@ hook_buttons:
     b       RET_BUTTONS
 
 /* KPADiRead, right after a sample was copied out to the caller's buffer at
- * r14+0x84 (r27 = channel, r15 = samples left, r30 = samples this read):
+ * r14+0x84 (K_CHAN = channel, r15 = samples left, r30 = samples this read):
  * CC sticks -> pointer and twist, in the caller's copy only, so KPAD's own
  * IR tracking state is never touched */
     .globl hook_motion
@@ -331,7 +336,7 @@ hook_motion:
     SAVE
     SAVE_FP
     addi    3, 14, 0x84
-    mr      4, 27
+    mr      4, K_CHAN
     subf    5, 15, 30               /* first = (r15 == r30) */
     cntlzw  5, 5
     srwi    5, 5, 5

@@ -331,10 +331,10 @@ static int write_pair(const char *appp, const uint8_t *app, uint32_t an, const c
     snprintf(first, sizeof(first), "%s", nand_why());
     bool back = nand_replace(appp, clean_app, cn) == NAND_OK && nand_replace(tmdp, clean_tmd, ctn) == NAND_OK;
     if (back) {
-        snprintf(err, (size_t)errsz, "Writing to the NAND failed (%s). WiiLink's clean copy was put back.", first);
+        snprintf(err, (size_t)errsz, "Writing to the NAND failed (%s). WiiLink's unpatched copy was put back.", first);
         return 1;
     }
-    snprintf(err, (size_t)errsz, "Writing to the NAND failed (%s) and the clean copy couldn't be put back: "
+    snprintf(err, (size_t)errsz, "Writing to the NAND failed (%s) and the unpatched copy couldn't be put back: "
              "choose Restore, or install the channel's WAD again.", first);
     return NAND_DAMAGED;
 }
@@ -354,7 +354,7 @@ static bool patch_nand(title_t *tt, uint32_t mask, say_fn say, pct_fn pct, char 
     nand_paths(tt, &r, tmdp, appp);
     uint8_t *app = NULL, h[20];
     if (tt->state == ST_CLEAN) {
-        say("Backing up the clean copy to %s ...", tt->backup);
+        say("Backing up the unpatched copy to %s ...", tt->backup);
         app = nand_read(appp, &an);
         if (app)
             sha1_of(app, an, h);
@@ -373,7 +373,7 @@ static bool patch_nand(title_t *tt, uint32_t mask, say_fn say, pct_fn pct, char 
         }
     } else {
         free(tmd);
-        say("Reading the clean copy from the backup...");
+        say("Reading the unpatched copy from the backup...");
         bpath(tt, "title.tmd", p, sizeof(p));
         tmd = sd_read(p, &tn);
         bpath(tt, "content1.app", p, sizeof(p));
@@ -501,7 +501,7 @@ bool title_restore(title_t *tt, const sd_keys_t *keys, say_fn say, char *err, in
     char p[200];
     err[0] = 0;
     if (tt->state != ST_PATCHED)
-        return E("It is already the clean copy");
+        return E("It is already unpatched");
     if (tt->on_sd) {
         char tmp[200];
         bpath(tt, "content.bin", p, sizeof(p));
@@ -534,7 +534,7 @@ bool title_restore(title_t *tt, const sd_keys_t *keys, say_fn say, char *err, in
         }
         char tmdp[96], appp[96];
         nand_paths(tt, &r, tmdp, appp);
-        say("Writing the clean copy to the NAND...");
+        say("Writing the unpatched copy to the NAND...");
         int w = nand_replace(appp, app, an);
         if (w == NAND_OK)
             w = nand_replace(tmdp, tmd, tn);

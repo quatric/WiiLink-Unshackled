@@ -1,7 +1,7 @@
 # WiiLink Unshackled (Wii app)
 
 A Homebrew Channel app that patches WiiLink's channels where they are installed, with the features you tick, and puts
-the clean copy back when you ask.
+the unpatched copy back when you ask.
 
 ## Install
 
@@ -10,27 +10,36 @@ the clean copy back when you ask.
 3. Start it from the **Homebrew Channel**. It needs HW_AHBPROT (`<ahb_access/>` in `meta.xml`) for the NAND and the
    console's keys.
 
-An SD card is required: every clean copy is backed up there before anything is changed.
+An SD card is required: every unpatched copy is backed up there before anything is changed.
+
+At start the app checks GitHub for a newer release (libwiiupdate). B skips the check; when there is one, A installs it
+over the app's folder.
 
 ## Use
 
-The app lists the channels it recognises, on the NAND and on the SD card, and whether each is **clean** (WiiLink's
-build) or **patched**. Pick one, tick the features you want and choose **Patch with these**. **Restore the clean copy**
-puts WiiLink's build back. Patching a patched channel starts again from the clean copy, so features can be turned off as
-well as on.
+The app lists the channels it recognises, on the NAND and on the SD card, and whether each is **unpatched** (WiiLink's
+build) or **patched**. Pick one, tick the features you want and choose **Patch with these**. **Restore the unpatched
+copy** puts WiiLink's build back. Patching a patched channel starts again from the unpatched copy, so features can be
+turned off as well as on.
+
+Up/Down move one row, Left/Right jump a page (stopping at the first and last rows), and a held D-pad repeats, as in
+GodModeWii. Every controller libwiiinput reads works: Wii Remote, Classic Controller, GameCube pad, USB keyboard.
 
 | Channel | Features |
 |---|---|
 | Forecast Channel (USA) | Classic Controller and GameCube pads, clock on US consoles, globe tilts both ways |
 | News Channel (USA) | pads, clock on US consoles |
 | Everybody Votes Channel (USA) | pads, USB keyboard, no daily suggestion limit |
-| Check Mii Out Channel (USA) | pads, gold pants Miis, debug menu (hold 1+2; off by default) |
+| Check Mii Out Channel (USA) | pads, gold pants Miis, debug menu (hold 1+2; off by default; the three entries that freeze a console do nothing) |
 | Nintendo Channel (USA) | pads |
 | Photo Channel 1.1 | pads, Message Board photos from the SD card |
 | Food Channel (Standard, Domino's, Just Eat) / Demae Channel | pads |
 | Digicam Print / Photo Prints Channel | pads |
 | Today and Tomorrow Channel (Japan, PAL) | pads |
 | Wii no Ma / Wii Room | pads |
+| Kirby TV Channel | pads |
+| Wii Speak Channel (USA) | pads, Message Board photos from the SD card |
+| Internet Channel (USA) | pads |
 
 The USB keyboard, the globe tilt table and the Message Board photos live in the controller patch's hook section, so
 they need it ticked. The clock patch is only offered for the US builds: the EU and Japanese ones already show the clock.
@@ -41,7 +50,7 @@ The AccuWeather banner (`build.py --accuweather`) isn't in the app yet.
 * A channel is only patched from WiiLink's own build: content 1 must match, by SHA-1, the build `build.py export`
   recorded (unpacked as well). Anything else isn't listed, so the app never layers onto an unknown or already-modified
   channel.
-* **Before the first patch** the clean content 1 and TMD (or the whole `content.bin`) are copied to
+* **Before the first patch** the unpatched content 1 and TMD (or the whole `content.bin`) are copied to
   `sd:/wiilink-unshackled/backup/<title ID>[-sd]/`, read back and compared. `applied.txt` there says which features
   are on.
 * The patched DOL is packed again with the LZ type WiiLink used (LZ10 / LZ11; the packed data is unpacked and compared
@@ -50,7 +59,7 @@ The AccuWeather banner (`build.py --accuweather`) isn't in the app yet.
   fakesigned channels as they are.
 * NAND files are written to `/tmp/wlu.tmp` (IOS takes file names of 12 characters at most), read back, then moved
   into place with the old file's owner and permissions, and read back again. Only the channel's own content 1 and
-  `title.tmd` are touched. If writing fails half way, WiiLink's clean copy is put back, and the message says which
+  `title.tmd` are touched. If writing fails half way, WiiLink's unpatched copy is put back, and the message says which
   of the two happened (and the NAND error).
 
 ### Channels on the SD card
@@ -68,21 +77,24 @@ updates the title's TMD on the NAND. The whole `content.bin` is backed up first.
 
 ## Tested
 
-In Dolphin: the app lists clean WiiLink channels from the NAND. Patching Wii no Ma / Wii Room (LZ11, the largest)
+In Dolphin: the app lists unpatched WiiLink channels from the NAND. Patching Wii no Ma / Wii Room (LZ11, the largest)
 backed it up, wrote exactly the DOL `build.py` makes (packed again), and the channel then booted from the NAND, with
 the Classic Controller stick moving its pointer. **Restore** put WiiLink's signed TMD and content back, byte for byte.
-A native build of the patcher core makes the same DOL as `build.py` for all 16 WADs below, and every feature set
-checked.
+A native build of the patcher core makes the same DOL as `build.py` for all 19 WADs below, and every feature set
+checked. Kirby TV, Wii Speak and the Internet Channel, patched, moved their pointer with the Classic Controller stick in
+Dolphin (and the Internet Channel with a GameCube pad); the app's list paging was checked there too.
 
 ## Build
 
 ```
+git submodule update --init      # wii/libwiiinput, wii/libwiiupdate
 cd wii
-make            # WiiLinkUnshackled.dol
+make            # WiiLinkUnshackled.dol (builds the two libraries first)
 make hbc        # apps/WiiLinkUnshackled/{boot.dol,meta.xml,icon.png}
 ```
 
-Needs devkitPPC and libogc (`DEVKITPRO`, `DEVKITPPC`). The patches are `data/patches.bin`, linked in with bin2o
+Needs devkitPPC, libogc and libwiikeyboard (`DEVKITPRO`, `DEVKITPPC`). libwiiinput and libwiiupdate are git
+submodules, pinned to the commits GodModeWii uses. The patches are `data/patches.bin`, linked in with bin2o
 (`patches_bin.h`). To make it again after changing the hooks or the profiles in `build.py`:
 
 ```
@@ -91,8 +103,9 @@ python3 build.py export wii/data/patches.bin "Forecast Channel (USA) (WiiLink).w
 
 with every WAD the app should recognise. The export used for `data/patches.bin`: Forecast, News, Everybody Votes, Check
 Mii Out and Nintendo Channels (USA), Food Channel (Standard, Domino's, Just Eat), Demae Channel (Standard), Digicam
-Print and Photo Prints Channels, Today and Tomorrow Channel (Japan, PAL), Wii Room and Wii no Ma (all WiiLink's), and
-the Photo Channel 1.1 system WAD. Builds with the same content 1 share an entry.
+Print and Photo Prints Channels, Today and Tomorrow Channel (Japan, PAL), Wii Room and Wii no Ma, Kirby TV Channel,
+Wii Speak Channel (USA, Wiimmfi) and Internet Channel (USA) (all from WiiLink's WAD set), and the Photo Channel 1.1
+system WAD. Builds with the same content 1 share an entry.
 
 ## patches.bin
 
@@ -105,12 +118,13 @@ Big-endian. It holds the hook section and changed words only, plus hashes: nothi
 | features | 0x40 bytes each: id (12), name (40), flags (1 on by default, 2 needs the hook section, 4 is the hook section), number of words, pool offset of the words |
 | pool | each feature's words as {offset in the DOL, original word, new word}, the headers and hook sections |
 
-The patched DOL is: the features' words changed in the clean DOL, then, with the hook section, the new header +
+The patched DOL is: the features' words changed in the unpatched DOL, then, with the hook section, the new header +
 DOL[0x100:at] + hook section + DOL[at:cut].
 
 ## Credits and licence
 
-`source/aes.c`, `sha1.c`, `ecc233.c`, `otp.c`, the `content.bin` layout and AP signature (`sdbin.c`) and the way the
+[libwiiinput](https://github.com/quatric/libwiiinput) reads the controllers and
+[libwiiupdate](https://github.com/quatric/libwiiupdate) checks for updates. `source/aes.c`, `sha1.c`, `ecc233.c`, `otp.c`, the `content.bin` layout and AP signature (`sdbin.c`) and the way the
 console keys are read (`keys.c`) come from [GodModeWii](https://github.com/quatric/GodModeWii), which follows
 DarkMatterCore's [wad2bin](https://github.com/DarkMatterCore/wad2bin). `runtimeiospatch.c` is libruntimeiospatch
 (Joseph Jordan, damysteryman, Christopher Bratusek, DarkMatterCore, megazig, FIX94), as GodModeWii carries it.
