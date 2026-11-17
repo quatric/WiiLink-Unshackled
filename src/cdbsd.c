@@ -32,6 +32,15 @@
  * each new drive after that: the driver's card insert / eject callbacks
  * report to that drive, and are kept off (0) while there is none.
  *
+ * Posts from any console (CDB_ANY): CDB looks for SD posts only under
+ * HAEA/<this console's Wii ID>/, and drops a post whose HMAC (keyed with this
+ * console's ID) or header ID is another console's.  build.py takes those two
+ * checks out and points the two getters that give the folder's ID halves (used
+ * only to build SD paths) at SCAN_ID.  cdbsd_mount() sets SCAN_ID before each
+ * scan: this console's folder if the card has one, otherwise the first
+ * console folder on the card (HAEA/<8 hex digits>/<8 hex digits>).  One
+ * console's folder is read per scan.
+ *
  * Built soft-float.  Addresses come in as -D macros (build.py 'cdbsd').
  */
 typedef unsigned int u32;
@@ -130,12 +139,104 @@ static s32 drv_tbl_init(u32 *drv, u32 arg)
     return 0;
 }
 
+#ifdef CDB_ANY
+#define SCAN_ID ((volatile u32 *)(STATE + 0x100))   /* folder ID: high, low (no kbd.c here) */
+#define VF_ATTR_DIR 0x10
+#define VF_INFO_ATTR 556                            /* VF file search info: attributes */
+#define VF_INFO_SNAME 557                           /* 8.3 name */
+#define VF_INFO_LNAME 570                           /* long name (empty: none) */
+typedef s32 (*search_t)(void *, const char *, u32);
+typedef s32 (*next_t)(void *);
+
+static int hex8(const char *s, u32 *v)
+{
+    u32 x = 0;
+    int i;
+    for (i = 0; i < 8; i++) {
+        char c = s[i];
+        if (c >= '0' && c <= '9')
+            x = x << 4 | (u32)(c - '0');
+        else if ((c | 0x20) >= 'a' && (c | 0x20) <= 'f')
+            x = x << 4 | (u32)((c | 0x20) - 'a' + 10);
+        else
+            return 0;
+    }
+    if (s[8])
+        return 0;
+    *v = x;
+    return 1;
+}
+
+static char *put(char *d, const char *s)
+{
+    while (*s)
+        *d++ = *s++;
+    *d = 0;
+    return d;
+}
+
+static char *put_hex8(char *d, u32 v)
+{
+    int i;
+    for (i = 7; i >= 0; i--)
+        *d++ = "0123456789ABCDEF"[(v >> (4 * i)) & 15];
+    *d = 0;
+    return d;
+}
+
+/* A folder in dir (pattern: the dir, then a star) named by 8 hex digits: want if it is there,
+ * otherwise the first one.  Returns 0 when there is none. */
+static int pick_dir(const char *pattern, u32 want, int use_want, u32 *out)
+{
+    unsigned char info[1104] __attribute__((aligned(8)));
+    int found = 0;
+    u32 v;
+    s32 r = ((search_t)VF_SEARCH_FIRST)(info, pattern, 128);
+    while (r == 0) {
+        const char *n = (const char *)info + (info[VF_INFO_LNAME] ? VF_INFO_LNAME : VF_INFO_SNAME);
+        if ((info[VF_INFO_ATTR] & VF_ATTR_DIR) && hex8(n, &v)) {
+            if (use_want && v == want) {
+                *out = v;
+                return 1;
+            }
+            if (!found) {
+                *out = v;
+                found = 1;
+            }
+        }
+        r = ((next_t)VF_SEARCH_NEXT)(info);
+    }
+    return found;
+}
+
+static void pick_folder(void)
+{
+    char pat[64], *p;
+    u32 own_hi = W(CDB_WIIID), own_lo = W(CDB_WIIID + 4), hi, lo;
+
+    p = put(pat, "SD:/private/wii/title/HAEA/");
+    put(p, "*");
+    if (!pick_dir(pat, own_hi, 1, &hi))
+        return;
+    p = put_hex8(p, hi);
+    put(p, "/*");
+    if (!pick_dir(pat, own_lo, hi == own_hi, &lo))
+        return;
+    SCAN_ID[0] = hi;
+    SCAN_ID[1] = lo;
+}
+#endif
+
 void cdbsd_mount(void)
 {
     static const char name[] = "SD";
     u32 lock, t0, t1, vol;
     s32 idx = -1;
 
+#ifdef CDB_ANY
+    SCAN_ID[0] = W(CDB_WIIID);                      /* this console's folder unless picked */
+    SCAN_ID[1] = W(CDB_WIIID + 4);
+#endif
     W(CDB_SD + 4) = 0;                              /* "SD is mounted to CDB" */
 #ifdef FA_SD_INIT
     W(FA_SD_STATE + 12) = 0;                        /* the old drive goes */
@@ -172,6 +273,10 @@ void cdbsd_mount(void)
     }
     if (lock)
         CALL1(FN_OSUNLOCKMUTEX, VF_MUTEX);
+#ifdef CDB_ANY
+    if (W(CDB_SD + 4))
+        pick_folder();
+#endif
     if (idx != -1 && !W(CDB_SD + 4)) {
 #ifdef FA_SD_INIT
         W(FA_SD_STATE + 12) = 0;

@@ -158,13 +158,28 @@ The channel reads the Message Board through Nintendo's CDB library, the same one
 * It sets CDB's "SD mounted" flag, and the scan asks for NAND and SD posts.
 * The drive is mounted afresh for every scan, so a swapped card is read from scratch. With no card in, the scan is NAND-only as before.
 
-Tested in Dolphin with a photo post that exists only on the SD card: it was found and its thumbnail was shown, also when the view was opened again. Without a card, NAND photos showed as before. The SD post was made by a script in the format CDB reads, not by the Wii Menu itself.
+### Posts from any console
+
+CDB only reads posts made for this console. It looks under `HAEA/<this console's Wii ID>/` only, and it drops a post if the HMAC (keyed with this console's ID) or the console ID in the post's header doesn't match. The Wii Menu does the same, which is why posts copied from another console, or made by a tool with the wrong key, were found by neither. The patch:
+
+* takes out CDB's two comparisons. The post is still decrypted with the key and IV it carries, as mailboxbomb's format describes, so the photo (the post's JPEG attachment) reads the same;
+* chooses which console folder CDB reads before each scan. It uses this console's `HAEA/<id>/<id>` folder if the card has one, and otherwise the first console folder on the card. CDB's two folder-ID getters are used only to build SD paths, and they now read the chosen ID (`cdbsd.c`, `SCAN_ID`).
+
+One console folder is read per scan, so with posts from several consoles on one card, only this console's (or the first) folder is shown.
+
+Tested in Dolphin:
+
+* A photo post that exists only on the SD card was found and its thumbnail was shown, also when the view was opened again.
+* The same post moved to another console's folder, with that console's ID in its header and an HMAC made with another key, was dropped before this change. It is shown now: "Found 2 photos" (one NAND post, one SD post), with both thumbnails.
+* Without a card, NAND photos showed as before. The "Digital Camera/Cell Phone" SD view works as in the original channel.
+
+The SD posts were made by a script in the format CDB reads, not by the Wii Menu itself.
 
 ## Wii Speak Channel: Message Board photos on the SD card
 
 The Wii Speak Channel (USA) reads Message Board photos through the same CDB scan as the Photo Channel. It looks for NAND posts only (`li r10,1` at `0x800340B4`). The same `cdbsd` hook makes it look on the SD card as well. Wii Speak has the same VF library and SD card driver, but nothing in the channel ever starts that driver. With `FA_SD_INIT` in its profile, `cdbsd.c` starts the driver for the first SD drive it attaches. It then points the driver at each new drive, so the driver's card insert/eject callbacks report to a live drive, or to none.
 
-Not tested in a running channel: the scan only runs when the photo viewer (`photoAppre`) asks for it, which is in an online chat room. The addresses were found by signature from the Photo Channel's, `build.py` builds and checks every original word, and the channel boots with the patch in Dolphin, with emulated Wii Speak and an SD card.
+Posts from any console work the same way here (same CDB code, ported addresses for the USA/PAL and Japanese builds). Not tested in a running channel: the scan only runs when the photo viewer (`photoAppre`) asks for it, which is in an online chat room. The addresses were found by signature from the Photo Channel's, `build.py` builds and checks every original word, and the channel boots with the patch in Dolphin, with emulated Wii Speak and an SD card.
 
 ## Wii app
 

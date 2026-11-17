@@ -247,6 +247,14 @@ CHANNELS = {
         'site_words': {'MOTION': 0x3718FFFF, 'MOTION2': 0x3739FFFF},
         'asm_defs': {'M1_DEST': 25, 'M1_LEFT': 24, 'M2_DEST': 27, 'M2_LEFT': 25},
         'clock': None,
+        # SD posts from any console: CDB checks a post's HMAC (keyed with this console's
+        # Wii ID) and the Wii ID in its header, so posts another console (or a tool)
+        # made were dropped, as the Wii Menu drops them.  The body is still decrypted
+        # (with the key in the post), only the two comparisons go.
+        'feature_patches': [
+            ('cdbsd', 0x80051484, [0x4182000C], [0x4800000C], 'SD posts: skip the HMAC check'),
+            ('cdbsd', 0x800514AC, [0x41820034], [0x48000034], "SD posts: skip the Wii ID check"),
+        ],
         # Wii Message Board photos from the SD card too (src/cdbsd.c)
         'cdbsd': {
             'site': 0x8000E6FC,                 # li r10,1: CDBDatabaseSearch(..., NAND only)
@@ -270,7 +278,13 @@ CHANNELS = {
                 'FA_SD_BUSY': 0x80383984,       # SDIO request in flight
                 'FA_SD_INFO': 0x8009DA20,
                 'CDB_SD': 0x802370A8,           # CDB SD paths / flags (+4: SD mounted)
+                'CDB_WIIID': 0x802371E0,        # this console's Wii ID (CDB's copy)
+                'VF_SEARCH_FIRST': 0x80070318,  # VFFileSearchFirst(info, pattern, attr)
+                'VF_SEARCH_NEXT': 0x800703E8,   # VFFileSearchNext(info)
             },
+            # the folder ID getters (high, low half), used only for SD paths: lis/addi
+            # pairs pointed at SCAN_ID (cdbsd.c)
+            'id_getters': [(0x800537F4, 0x80053804), (0x80053860, 0x80053868)],
         },
     },
     # The WiiLink WADs below store content 1 LZ-compressed (main_dol() unpacks it).
@@ -462,8 +476,16 @@ CHANNELS = {
                 'FA_SD_BUSY': 0x8055DEEC,
                 'FA_SD_INFO': 0x802FB010,
                 'CDB_SD': 0x80557B30,
+                'CDB_WIIID': 0x80557CA0,
+                'VF_SEARCH_FIRST': 0x802CBB60,
+                'VF_SEARCH_NEXT': 0x802CBC58,
             },
+            'id_getters': [(0x8030675C, 0x8030676C), (0x803067C8, 0x803067D0)],
         },
+        'feature_patches': [
+            ('cdbsd', 0x803043EC, [0x4182000C], [0x4800000C], 'SD posts: skip the HMAC check'),
+            ('cdbsd', 0x80304414, [0x41820034], [0x48000034], 'SD posts: skip the Wii ID check'),
+        ],
     },
     # Kirby TV Channel (HCMP): a Dec 2009 KPAD, the same code as Wii Room's
     'kirby': {
@@ -612,7 +634,8 @@ CHANNELS = {
         'asm_defs': {'M1_DEST': 25, 'M1_LEFT': 24, 'M2_DEST': 27, 'M2_LEFT': 25},
         'clock': None,
         'hook_size': 0x2000,
-        'cdbsd': {'site': 0x800340B4, 'defs': {'VF_LOOKUP': 0x802CF044, 'VF_ATTACH': 0x802CC664, 'VF_SETNAME': 0x802CF0A4, 'VF_VOLUME': 0x802CC2A8, 'VF_DRV_PRESENT': 0x802CFDD4, 'VF_NOTIFY_INSERT': 0x802B43D4, 'VF_UNMOUNT': 0x802CB258, 'VF_MOUNT': 0x802CACC0, 'VF_DISK_TMPL': 0x8055C8A0, 'VF_LOCK_ON': 0x8055EA3C, 'VF_MUTEX': 0x8051FD00, 'FN_OSLOCKMUTEX': 0x8010F234, 'FN_OSUNLOCKMUTEX': 0x8010F310, 'FA_SD_STATE': 0x80558100, 'FA_SD_INIT': 0x802FA970, 'FA_SD_MOUNT': 0x802FABC0, 'FA_SD_READ': 0x802FAE60, 'FA_SD_BUSY': 0x8055EA6C, 'FA_SD_INFO': 0x802FB010, 'CDB_SD': 0x805586B0}},
+        'cdbsd': {'site': 0x800340B4, 'defs': {'VF_LOOKUP': 0x802CF044, 'VF_ATTACH': 0x802CC664, 'VF_SETNAME': 0x802CF0A4, 'VF_VOLUME': 0x802CC2A8, 'VF_DRV_PRESENT': 0x802CFDD4, 'VF_NOTIFY_INSERT': 0x802B43D4, 'VF_UNMOUNT': 0x802CB258, 'VF_MOUNT': 0x802CACC0, 'VF_DISK_TMPL': 0x8055C8A0, 'VF_LOCK_ON': 0x8055EA3C, 'VF_MUTEX': 0x8051FD00, 'FN_OSLOCKMUTEX': 0x8010F234, 'FN_OSUNLOCKMUTEX': 0x8010F310, 'FA_SD_STATE': 0x80558100, 'FA_SD_INIT': 0x802FA970, 'FA_SD_MOUNT': 0x802FABC0, 'FA_SD_READ': 0x802FAE60, 'FA_SD_BUSY': 0x8055EA6C, 'FA_SD_INFO': 0x802FB010, 'CDB_SD': 0x805586B0, 'CDB_WIIID': 0x80558820, 'VF_SEARCH_FIRST': 0x802CBB60, 'VF_SEARCH_NEXT': 0x802CBC58}, 'id_getters': [(0x8030675C, 0x8030676C), (0x803067C8, 0x803067D0)]},
+        'feature_patches': [('cdbsd', 0x803043EC, [0x4182000C], [0x4800000C], 'SD posts: skip the HMAC check'), ('cdbsd', 0x80304414, [0x41820034], [0x48000034], 'SD posts: skip the Wii ID check')],
     },
 }
 CHANNELS['kirby']['site_words'] = CHANNELS['wiinoma']['site_words']
@@ -785,6 +808,9 @@ def build_blob(ch, base, state, debug_feed=False):
         D.append('-DKBD')
     if 'cdbsd' in ch:
         D.append('-DCDBSD')
+        if ch['cdbsd'].get('id_getters'):
+            assert 'kbd' not in ch          # SCAN_ID is kbd.c's state space
+            D.append('-DCDB_ANY')
     if debug_feed:
         D.append('-DDEBUG_FEED')
     if 'repeat' in ch:
@@ -1009,6 +1035,12 @@ class Plan:
                     if new[w:w + 4] != dol.d[w:w + 4]:
                         a = dol.field(0x48, i) + w - o
                         word('wiilink', a, dol.word(a), struct.unpack('>I', new[w:w + 4])[0])
+        for lis_a, addi_a in ch.get('cdbsd', {}).get('id_getters', []):   # -> SCAN_ID (cdbsd.c)
+            lis, addi, v = dol.word(lis_a), dol.word(addi_a), self.state + 0x100
+            if lis >> 26 != 15 or addi >> 26 != 14 or (addi >> 16) & 31 != (lis >> 21) & 31:
+                raise SystemExit('id getter 0x%08X/0x%08X: not a lis/addi pair' % (lis_a, addi_a))
+            word('cdbsd', lis_a, lis, (lis & 0xFFFF0000) | ((v + 0x8000) >> 16 & 0xFFFF))
+            word('cdbsd', addi_a, addi, (addi & 0xFFFF0000) | (v & 0xFFFF))
         for lis_a, addi_a, sym in ch.get('sympatches', []):
             lis, addi, v = dol.word(lis_a), dol.word(addi_a), self.syms[sym]
             if lis >> 26 != 15 or addi >> 26 != 14 or (addi >> 16) & 31 != (lis >> 21) & 31:
