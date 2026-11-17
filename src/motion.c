@@ -29,6 +29,7 @@ struct mst {
     u8 inited;
     float vx[4], vy[4];     /* stick pointer movement this read (POINTER_VEC) */
     u8 tick[4];             /* idle wobble phase (POINTER_VEC) */
+    u8 rep_act[4];          /* this read: 0 nothing, 1 let go, 2 press again (REPEAT_MASK) */
 };
 #define MST ((volatile struct mst *)(STATE + 0x40))         /* 0x40-0x100 */
 
@@ -124,23 +125,39 @@ static int aspect_wide(void)
 
 #ifdef REPEAT_MASK
 /* Hold-to-repeat for the buttons in REPEAT_MASK (any controller): while one is
- * held, its trig bit comes back after 0.4 s and then every 0.15 s, so the
- * channel sees repeated presses.  KPADStatus: hold +0x00, trig +0x04. */
+ * held, it is let go for one read and pressed again, 0.4 s after the press and
+ * then every 0.15 s, so the channel sees repeated presses whether it reads
+ * KPAD's trig bits or finds new presses in the held buttons itself (the
+ * Forecast Channel does).  Decided on a read's first sample, done to all of
+ * its samples.  KPADStatus: hold +0x00, trig +0x04. */
 #define TB_HZ 60750000u
-static void repeat(u8 *k, u32 chan)
+static void repeat(u8 *k, u32 chan, u32 first)
 {
-    u32 hold = *(volatile u32 *)k & REPEAT_MASK;
-    u32 trig = *(volatile u32 *)(k + 4) & REPEAT_MASK;
+    volatile u32 *hold = (volatile u32 *)k, *trig = (volatile u32 *)(k + 4);
+    u32 h = *hold & REPEAT_MASK;
     u32 now;
 
-    __asm__ volatile("mftb %0" : "=r"(now));
-    if (!hold)
-        return;
-    if (trig) {
-        MST->rep_tb[chan] = now + TB_HZ / 5 * 2;
-    } else if ((int)(now - MST->rep_tb[chan]) >= 0) {
-        *(volatile u32 *)(k + 4) |= hold;
-        MST->rep_tb[chan] = now + TB_HZ / 20 * 3;
+    if (first) {
+        __asm__ volatile("mftb %0" : "=r"(now));
+        if (!h)
+            MST->rep_act[chan] = 0;
+        else if (*trig & REPEAT_MASK) {
+            MST->rep_act[chan] = 0;
+            MST->rep_tb[chan] = now + TB_HZ / 5 * 2;
+        } else if (MST->rep_act[chan] == 1) {
+            MST->rep_act[chan] = 2;
+            MST->rep_tb[chan] = now + TB_HZ / 20 * 3;
+        } else if ((int)(now - MST->rep_tb[chan]) >= 0) {
+            MST->rep_act[chan] = 1;
+        } else {
+            MST->rep_act[chan] = 0;
+        }
+    }
+    if (MST->rep_act[chan] == 1) {
+        *hold &= ~h;
+        *trig &= ~h;
+    } else if (MST->rep_act[chan] == 2) {
+        *trig |= h;
     }
 }
 #endif
@@ -154,8 +171,7 @@ void cc_motion(u8 *k, u32 chan, u32 first)
     if (chan > 3)
         return;
 #ifdef REPEAT_MASK
-    if (first)
-        repeat(k, chan);
+    repeat(k, chan, first);
 #endif
     if (k[0x5C] != 2 || (s8)k[0x5D] != 0)
         return;

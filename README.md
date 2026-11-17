@@ -29,7 +29,7 @@ Adds Classic Controller and GameCube controller support to WiiLink's channels, t
 Sizes are for the uncompressed DOL. Most of these WADs store content 1 LZ-compressed; `build.py` unpacks it and writes the patched DOL back uncompressed (the boot program loads either).
 
 ```
-python3 build.py wad "<channel> (WiiLink).wad" out.wad [--clock] [--calm] [--wiilink] [--accuweather] [--newslogos]
+python3 build.py wad "<channel> (WiiLink).wad" out.wad [--clock] [--calm] [--wiilink] [--accuweather] [--newslogos] [--articlemusic]
 python3 build.py dol 00000001.app out.app [--clock] [--calm] [--wiilink]
 ```
 
@@ -51,10 +51,12 @@ As on EUR/JPN consoles, the clock fades out while the pointer is over the button
 
 The Forecast Channel build also gets:
 
-* **Hold to repeat:** holding +, −, Up or Down repeats it after 0.4 s, then every 0.15 s. That zooms or tilts the globe step after step, or flips through the forecast pages, like holding them in the News Channel.
+* **Hold to repeat:** holding +, −, Up or Down repeats it after 0.4 s, then every 0.15 s. That zooms or tilts the globe step after step, or flips through the forecast pages, like holding them in the News Channel. The Forecast Channel finds presses itself, from the moment a button goes down, so each repeat lets go of the button for one read and presses it again.
 * **Globe tilt both ways:** Up/Down (and the curved-arrow buttons) tilt the globe. They now use the News Channel's 11 angles (−80° to 80°, level in the middle) instead of 0° to 80°. The globe can tilt over to its far side, upside down. It opens level, and Restore goes back to level.
+* **Tilt sounds:** each angle plays the News Channel's sound for it, rising toward level and falling again past it (sounds 17…12…17), instead of the Forecast Channel's six rising ones, which ran past the end of their table on the new angles.
+* **Upside down, not mirrored:** the Forecast Channel's camera keeps its "up" pointing to the top of the globe, so tilted past level the view flipped round and the globe came out mirrored left to right. A hook on the camera's posture call (`globe_posture`, `call_hooks` in `build.py`) turns "up" over when the tilt is below level, as the News Channel does.
 
-The tilt code is the same in both channels, apart from the angle table and its bounds. The new table lives in the hook section, and `build.py` points the channel's four table loads at it (`sympatches`).
+The tilt code is the same in both channels, apart from the angle table and its bounds. The new angle and sound tables live in the hook section, and `build.py` points the channel's table loads at them (`sympatches`).
 
 ## Forecast Channel: calm wind (`--calm`)
 
@@ -92,6 +94,12 @@ The textures in `assets/accuweather/` are AccuWeather's official horizontal logo
 * Text only ever gets shorter, so every string stays in its own space. Check Mii Out's contest script counts its strings' lengths, so there the line keeps its length (with a trailing space).
 
 Main DOLs with WiiConnect24 messages: the Food and Demae Channels (their error messages). The other channels keep theirs in layouts or manuals.
+
+## News Channel: article music (`--articlemusic`)
+
+The News Channel's music is made of layers that start together and fade in and out with the screen: `bgm_news_anytime` (NEW_BGM_NEWS) always, `bgm_news_cikyu_only` (the globe) on the globe, and `bgm_news_read_only` (NEW_BGM_READ) on the reading screens (sections, headlines, articles). The channel starts and fades the reading layer, but its sound archive (`rev_news.brsar`, content 9) gives it volume 0, so it is never heard. It may have been muted because it drifts: it loops every 78 bars and the main layer every 56 (same tempo), so after the first 1 min 47 s the two no longer line up.
+
+`--articlemusic` (News Channel, `wad` mode; `res.py`) gives NEW_BGM_READ the main layer's volume (50) and shortens each of its 16 tracks to loop after 56 bars, back to the same loop start. A jump is written where the main layer loops (a wait across that point is shortened, and a subroutine call across it is copied up to it); every note before it is left as it is. The archive is the same in all three regions. The Wii app doesn't change resources yet, so this is a `build.py` option only.
 
 ## News Channel: sources (`--newslogos`)
 

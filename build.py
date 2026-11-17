@@ -4,7 +4,7 @@
 
   build.py dol <00000001.app in> <00000001.app out> [--clock] [--calm] [--wiilink] [--debug-feed] [--debug-menu]
   build.py wad <channel .wad> <out.wad> [--clock] [--calm] [--wiilink] [--accuweather] [--newslogos]
-                                       [--debug-feed] [--debug-menu]
+                                       [--articlemusic] [--debug-feed] [--debug-menu]
   build.py export <patches.bin> <channel .wad>...    (for the Wii app, wii/)
 
 The channel is recognised from its main DOL.  Builds the hooks in src/ with
@@ -20,7 +20,9 @@ wind with no direction as "Calm" on US consoles, as elsewhere, not "None".
 service, in the DOL's messages and, in wad mode, the manual, layouts and banner
 (res.py).  In wad mode --accuweather also changes the in-channel credit line and
 the manual, and --newslogos (News) shows the sources WiiLink uses on the manual's
-Source page, with their current logos (res.py).  Every region's WiiLink WADs are
+Source page, with their current logos, and --articlemusic (News) lets the
+article-reading music layer be heard, looping in time with the main music
+(res.py).  Every region's WiiLink WADs are
 supported: Forecast, News and Internet use one main DOL everywhere, the others
 have a profile per region (tools/portprofile.py ports a profile to another build).
 `wad` unpacks with Sharpii, patches content 1 (decompressing it if WiiLink LZ-packed it), repacks and fakesigns.
@@ -75,7 +77,13 @@ CHANNELS = {
         ],
         # (lis address, addi address, hook symbol): point the angle table loads at tilt_angles
         'sympatches': [(0x80040A58, 0x80040A60, 'tilt_angles'), (0x80040B08, 0x80040B10, 'tilt_angles'),
-                       (0x80040BA0, 0x80040BA4, 'tilt_angles'), (0x80040C04, 0x80040C08, 'tilt_angles')],
+                       (0x80040BA0, 0x80040BA4, 'tilt_angles'), (0x80040C04, 0x80040C08, 'tilt_angles'),
+                       # the tilt step's sound table (passed to the step, 0x80040B3C): the
+                       # channel's has sounds for only six angles
+                       (0x8001AA38, 0x8001AA40, 'tilt_sounds')],
+        # bl the camera's set-posture -> globe_posture (hooks.S): turn the camera's up
+        # round below level, or the globe's picture turns half round there
+        'call_hooks': [(0x8002BB5C, 0x800AD67C, 'globe_posture', 'FN_SETPOSTURE')],
         # Wind direction code 0 means no wind.  The wind line (0x8001F110: direction r4,
         # speed r5) prints it as a word only when the console's area is not a "USA" one
         # (SCGetProductArea: USA, Brazil, Korea, ... set 0x8033CEFC (r13-27140) to 1):
@@ -794,6 +802,8 @@ def build_blob(ch, base, state, debug_feed=False):
     tmp = tempfile.mkdtemp(prefix='fcpad')
     src = os.path.join(HERE, 'src')
     defs = dict(ch['defs'], STATE=state)
+    for _site, orig, _sym, name in ch.get('call_hooks', []):   # the call a hook goes on to
+        defs[name] = orig
     if 'kbd' in ch:
         defs.update(ch['kbd']['defs'])
     if 'cdbsd' in ch:
@@ -1041,6 +1051,8 @@ class Plan:
                 raise SystemExit('id getter 0x%08X/0x%08X: not a lis/addi pair' % (lis_a, addi_a))
             word('cdbsd', lis_a, lis, (lis & 0xFFFF0000) | ((v + 0x8000) >> 16 & 0xFFFF))
             word('cdbsd', addi_a, addi, (addi & 0xFFFF0000) | (v & 0xFFFF))
+        for site, orig, sym, _ in ch.get('call_hooks', []):          # bl orig -> bl sym
+            word('tilt', site, b_to(site, orig) | 1, b_to(site, self.syms[sym]) | 1)
         for lis_a, addi_a, sym in ch.get('sympatches', []):
             lis, addi, v = dol.word(lis_a), dol.word(addi_a), self.syms[sym]
             if lis >> 26 != 15 or addi >> 26 != 14 or (addi >> 16) & 31 != (lis >> 21) & 31:
@@ -1224,13 +1236,14 @@ def main():
     dbg = '--debug-menu' in sys.argv
     wl = '--wiilink' in sys.argv
     ap = '--newslogos' in sys.argv or '--aplogo' in sys.argv     # --aplogo: the old name
+    am = '--articlemusic' in sys.argv
     extra = [f for f, on in (('calm', '--calm' in sys.argv), ('wiilink', wl)) if on]
     if len(a) != 3 or a[0] not in ('dol', 'wad'):
         raise SystemExit(__doc__)
     mode, src, dst = a
     if mode == 'dol':
-        if accu or ap:
-            raise SystemExit('--accuweather and --newslogos need wad mode (they change other contents)')
+        if accu or ap or am:
+            raise SystemExit('--accuweather, --newslogos and --articlemusic need wad mode (they change other contents)')
         patched = patch_dol(main_dol(open(src, 'rb').read()), clock, feed, dbg, extra)
         open(dst, 'wb').write(patched)
         return
@@ -1241,8 +1254,8 @@ def main():
     key = detect(main)[0]
     if accu and key != 'forecast':
         raise SystemExit('--accuweather is only for the Forecast Channel')
-    if ap and key != 'news':
-        raise SystemExit('--newslogos is only for the News Channel')
+    if (ap or am) and key != 'news':
+        raise SystemExit('--newslogos and --articlemusic are only for the News Channel')
     patched = patch_dol(main, clock, feed, dbg, extra)
     open(app, 'wb').write(patched)
     sys.path.insert(0, HERE)
@@ -1252,7 +1265,7 @@ def main():
         new = banner.patch_opening(open(bnr, 'rb').read())
         open(bnr, 'wb').write(new)
         print('banner: WeatherNews logo -> AccuWeather')
-    rf = [f for f, on in (('accuweather', accu), ('wiilink', wl), ('newslogos', ap)) if on]
+    rf = [f for f, on in (('accuweather', accu), ('wiilink', wl), ('newslogos', ap), ('articlemusic', am)) if on]
     if rf:
         import res
         print('resources (%s): changed %s' % (', '.join(rf), ', '.join(res.apply(tmp + '/u', rf, skip=('00000001.app',)))))

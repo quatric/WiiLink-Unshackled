@@ -23,6 +23,13 @@ Features:
                News Channel server) and copyright line: USA AP (current logo); PAL
                English Reuters, French France 24, German tagesschau, Spanish RTVE,
                Italian ANSA, Dutch NOS; Japan Reuters.  (aplogo is the old name.)
+  articlemusic News Channel: the music layer for reading the news (rev_news.brsar's
+               NEW_BGM_READ, bgm_news_read_only) is heard.  The channel always plays
+               it with the main music (NEW_BGM_NEWS, bgm_news_anytime) and fades it in
+               on the reading screens (out on the globe), but the archive gives it
+               volume 0.  Its loop
+               is 78 bars and the main music's 56, so after the first pass the two
+               no longer line up: every track of it now loops after 56 bars too.
 
 The containers are opened as needed (U8, LZ10 / LZ11 with or without the LZ77
 magic, IMD5, the IMET banner) and only the ones holding a changed file are
@@ -148,7 +155,7 @@ def wanted(name):
 def edit_tree(d, path, leaf):
     """leaf(path, data) -> new data or None.  Returns the new data, or None."""
     name = path.rsplit('/', 1)[-1]
-    if not wanted(name):
+    if not wanted(name) and not getattr(leaf, 'wants', lambda n: False)(name):
         return None
     if path.count('/') == 0:                       # a content: maybe the IMET banner
         i = d.find(b'IMET', 0, 0x100)
@@ -431,6 +438,181 @@ def accu_credit_tpl(d):
     return bytes(d)
 
 
+# ---- News Channel article music ----
+SEQ_U8 = set(range(0xB0, 0xE0))            # commands with a u8 argument
+SEQ_S16 = {0xE0, 0xE1, 0xE3}
+
+
+def seq_varlen(n):
+    out = [n & 0x7F]
+    while n > 0x7F:
+        n >>= 7
+        out.insert(0, 0x80 | (n & 0x7F))
+    return bytes(out)
+
+
+def seq_walk(d, base, at):
+    """a track's commands from at to its jump: [(offset, tick before, command, tick after,
+    in a subroutine)], the jump's target and the subroutines called"""
+    out, t, notewait, stack, calls = [], 0, True, [], set()
+    while True:
+        start, c = at, d[base + at]
+        at += 1
+
+        def varlen():
+            nonlocal at
+            v = 0
+            while True:
+                b = d[base + at]
+                at += 1
+                v = v << 7 | b & 0x7F
+                if not b & 0x80:
+                    return v
+        if 0xA0 <= c <= 0xA5:
+            raise SystemExit('bgm_news: prefix command 0x%02X at 0x%X (not expected)' % (c, start))
+        before, sub = t, bool(stack)
+        if c < 0x80:                                # note: key, velocity, length
+            at += 1
+            n = varlen()
+            t += n if notewait else 0
+        elif c == 0x80:
+            t += varlen()
+        elif c == 0x81:
+            varlen()
+        elif c == 0x88:
+            at += 4
+        elif c == 0x89:
+            if stack:
+                raise SystemExit('bgm_news: a jump in a subroutine at 0x%X' % start)
+            out.append((start, before, c, t, sub))
+            return out, int.from_bytes(d[base + at:base + at + 3], 'big'), calls
+        elif c == 0x8A:
+            tgt = int.from_bytes(d[base + at:base + at + 3], 'big')
+            stack.append(at + 3)
+            calls.add(tgt)
+            at = tgt
+        elif c == 0xFD:
+            at = stack.pop()
+        elif c == 0xC7:
+            notewait = bool(d[base + at])
+            at += 1
+        elif c in SEQ_U8:
+            at += 1
+        elif c in SEQ_S16:
+            at += 2
+        elif c == 0xF0:
+            at += 3 if d[base + at] != 0xE0 else 2
+            at += 1
+        elif c == 0xFE:
+            at += 2
+        elif c != 0xFC:
+            raise SystemExit('bgm_news: command 0x%02X at 0x%X' % (c, start))
+        out.append((start, before, c, t, sub))
+
+
+def rseq_tracks(d, o):
+    """the RSEQ at o: (data base, name, {track: (start, loop start)})"""
+    be = lambda a: struct.unpack('>I', d[a:a + 4])[0]
+    db = o + be(o + 0x10)
+    base = db + be(db + 8)
+    lbl = o + be(o + 0x18)
+    labels = {}
+    for k in range(be(lbl + 8)):
+        lo = lbl + 8 + be(lbl + 12 + 4 * k)
+        labels[d[lo + 8:lo + 8 + be(lo + 4)].decode()] = be(lo)
+    begin = [k for k in labels if k.endswith('_Begin')]
+    if not begin:                                   # sound effects: no SMF tracks
+        return base, None, {}
+    name = begin[0][:-6]
+    tracks = {}
+    for k, v in labels.items():
+        m = re.fullmatch(re.escape(name) + r'_Track_(\d+)', k)
+        if m:
+            tracks[int(m.group(1))] = (v, labels.get(k + '_LoopStart'))
+    return base, name, tracks
+
+
+def seq_loop(d, base, start, loop):
+    """(tick at the loop start, loop length, walk)"""
+    w, tgt, calls = seq_walk(d, base, start)
+    if tgt != loop:
+        raise SystemExit('bgm_news: a track jumps to 0x%X, not its loop start 0x%X' % (tgt, loop))
+    at = {off: before for off, before, _, _, sub in w if not sub}
+    return at[loop], w[-1][3] - at[loop], w, calls
+
+
+def news_read_bgm(d):
+    """rev_news.brsar: NEW_BGM_READ at NEW_BGM_NEWS's volume, its loop as long as the main music's"""
+    d = bytearray(d)
+    be = lambda a: struct.unpack('>I', d[a:a + 4])[0]
+    if d[:4] != b'RSAR':
+        return None
+    symb, info = be(0x10), be(0x18)
+    names = symb + 8 + be(symb + 8)
+    string = lambda i: d[symb + 8 + be(names + 4 + 4 * i):].split(b'\0', 1)[0].decode()
+    ib = info + 8
+    st = ib + be(ib + 4)                                         # the sound table
+    sounds = [ib + be(st + 4 + 8 * k + 4) for k in range(be(st))]
+    by = {string(be(e)): e for e in sounds}
+    news, read = by.get('NEW_BGM_NEWS'), by.get('NEW_BGM_READ')
+    if news is None or read is None:
+        raise SystemExit('rev_news.brsar: no NEW_BGM_NEWS / NEW_BGM_READ')
+    d[read + 20] = d[news + 20]                                  # volume
+    seqs = {}
+    for m in re.finditer(b'RSEQ\xfe\xff', d):
+        base, name, tracks = rseq_tracks(d, m.start())
+        seqs[name] = (base, tracks)
+    base, tracks = seqs['SMF_bgm_news_anytime']
+    loops = {seq_loop(d, base, s, l)[:2] for s, l in tracks.values()}
+    if len(loops) != 1:
+        raise SystemExit('bgm_news_anytime: tracks loop differently: %s' % loops)
+    first, length = loops.pop()
+    base, tracks = seqs['SMF_bgm_news_read_only']
+    for n, (s, l) in sorted(tracks.items()):
+        lstart, llen, w, calls = seq_loop(d, base, s, l)
+        if lstart != first or llen < length:
+            raise SystemExit('bgm_news_read_only track %d: loop at %d, %d long' % (n, lstart, llen))
+        if llen == length:
+            continue
+        end = lstart + length
+        jump_end = w[-1][0] + 4
+        top = [i for i, x in enumerate(w) if not x[4]]
+        for k, i in enumerate(top[:-1]):
+            at, before, c, after, _ = w[i]
+            stop = w[top[k + 1]][1]                 # a call lasts until the command after it
+            if before == end:
+                cut = b''
+            elif before < end < stop and c == 0x80:     # a wait across the new end: shortened
+                cut = b'\x80' + seq_varlen(end - before)
+            elif before < end < stop and c == 0x8A:     # a call: its commands up to the new end
+                body = w[i + 1:top[k + 1]]
+                if any(x[2] in (0x8A, 0xFD) for x in body[:-1]) or body[-1][2] != 0xFD:
+                    raise SystemExit('bgm_news_read_only track %d: nested call at 0x%X' % (n, at))
+                j = next(m for m, x in enumerate(body) if x[3] > end or x[1] == end)
+                cut = bytes(d[base + body[0][0]:base + body[j][0]])
+                if body[j][1] < end:
+                    if body[j][2] != 0x80:
+                        raise SystemExit('bgm_news_read_only track %d: command 0x%02X across the loop end'
+                                         % (n, body[j][2]))
+                    cut += b'\x80' + seq_varlen(end - body[j][1])
+            elif before < end < stop:
+                raise SystemExit('bgm_news_read_only track %d: command 0x%02X across the loop end' % (n, c))
+            else:
+                continue
+            break
+        else:
+            raise SystemExit('bgm_news_read_only track %d: no command at the new loop end' % n)
+        new = cut + b'\x89' + l.to_bytes(3, 'big')
+        if at + len(new) > jump_end:
+            raise SystemExit('bgm_news_read_only track %d: no room for the jump' % n)
+        if any(at <= x < at + len(new) for t in tracks.values() for x in seq_loop(d, base, *t)[3]):
+            raise SystemExit('bgm_news_read_only track %d: the jump would cover a subroutine' % n)
+        d[base + at:base + at + len(new)] = new
+        if seq_loop(d, base, s, l)[:2] != (first, length):
+            raise SystemExit('bgm_news_read_only track %d: loop not shortened' % n)
+    return bytes(d)
+
+
 # ---- News Channel sources ----
 NEWS_IMG = 'html/img/CHM_common_source/'
 NEWS_PAL = {   # language: (logo, copyright line)
@@ -514,6 +696,8 @@ def leaf_for(feats):
         low = path.lower()
         if 'accuweather' in feats and low.endswith('/tplweather.tpl.lz'):
             return accu_credit_tpl(d)
+        if 'articlemusic' in feats and low.endswith('/rev_news.brsar'):
+            return news_read_bgm(d)
         changed = news_leaf(path, d) if feats & {'newslogos', 'aplogo'} else None
         if changed is not None:
             d = changed
@@ -524,6 +708,7 @@ def leaf_for(feats):
         return changed
 
     leaf.add = news_add if feats & {'newslogos', 'aplogo'} else (lambda p: {})
+    leaf.wants = (lambda n: n.lower() == 'rev_news.brsar') if 'articlemusic' in feats else (lambda n: False)
     return leaf
 
 

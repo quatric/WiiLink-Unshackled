@@ -387,4 +387,37 @@ hook_cdbsd:
     .balign 4
 tilt_angles:
     .float -80.0, -73.0, -65.0, -55.0, -45.0, 0.0, 45.0, 55.0, 65.0, 73.0, 80.0
+
+/* the sound each angle's step plays, also the News Channel's (the Forecast
+ * Channel's table has only the six of 0..80 degrees: past it, other sounds) */
+    .globl tilt_sounds
+tilt_sounds:
+    .long 17, 16, 15, 14, 13, 12, 13, 14, 15, 16, 17
+
+/* Called instead of the camera's set-posture (lookat) for the globe: r3 = the
+ * globe + 4, r4 = {type, up[3], target[3]}.  The channel's "up" is the camera
+ * position plus a little of the rotated Y axis, so the camera keeps the globe's
+ * horizon at the top of the screen whatever the tilt.  Tilted the other way
+ * (below level, the angles the Forecast Channel never had), that turns the
+ * picture half round as the camera crosses level.  Turn up round with it, so
+ * the globe keeps rolling over instead. */
+    .globl globe_posture
+globe_posture:
+    lfs     0, 152(3)               /* tilt (globe + 156) */
+    fsubs   1, 0, 0                 /* 0.0 */
+    fcmpo   0, 0, 1
+    bge     1f
+    lfs     0, 4(4)
+    fneg    0, 0
+    stfs    0, 4(4)
+    lfs     0, 8(4)
+    fneg    0, 0
+    stfs    0, 8(4)
+    lfs     0, 12(4)
+    fneg    0, 0
+    stfs    0, 12(4)
+1:  lis     12, FN_SETPOSTURE@ha
+    addi    12, 12, FN_SETPOSTURE@l
+    mtctr   12
+    bctr
 #endif
