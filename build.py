@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Classic Controller + GameCube controller patch for the WiiLink Forecast and News Channels (USA).
+"""Classic Controller + GameCube controller patch for WiiLink's USA channels
+(Everybody Votes Channel: also USB keyboard and no daily suggestion limit).
 
   build.py dol <00000001.app in> <00000001.app out> [--clock] [--debug-feed]
   build.py wad <channel .wad> <out.wad> [--clock] [--debug-feed]
@@ -82,6 +83,25 @@ CHANNELS = {
         'sites': {'POLL': 0x80158E50, 'SAMPLE': 0x80158F68, 'PROBE': 0x800DD068,
                   'BUTTONS': 0x80159418, 'MOTION': 0x8015954C},
         'clock': None,
+        'hook_size': 0x2000,
+        # USB keyboard for the software keyboard (src/kbd.c)
+        'kbd': {
+            'site': 0x80085860,         # keyboard state calc: lwz r12,0(r3) before inputForm->calc()
+            'defs': {
+                'FN_IOS_OPEN': 0x800F53F0,
+                'FN_IOS_IOCTLASYNC': 0x800F5C50,
+                'SLOT_ONCOMMAND': 5,    # input form: onCommand(cmd, data)
+                'SLOT_GETTOOLBAR': 16,  # keyboard state: toolbar
+                'SLOT_OK': 35,          # toolbar: OK pressed
+                'SLOT_CANCEL': 36,      # toolbar: Quit pressed
+                'CMD_CHAR': 0, 'CMD_DELETE': 1, 'CMD_LEFT': 7, 'CMD_RIGHT': 8,
+            },
+        },
+        # (address, original words, new words, what)
+        'patches': [
+            (0x80062788, [0x9421FFC0, 0x7C0802A6], [0x38600001, 0x4E800020],
+             'suggestion limit: "suggested today?" check always says no'),
+        ],
     },
     'cmoc': {
         'title': 'Check Mii Out Channel (USA, HAPE)',
@@ -148,11 +168,20 @@ SITES = {
 
 
 def sites(ch):
-    return SITES[ch.get('sdk', 2007)]
+    s = dict(SITES[ch.get('sdk', 2007)])
+    if 'kbd' in ch:
+        s['KBD'] = (0x81830000, 'hook_kbd')       # lwz r12,0(r3)
+    return s
+
+
+def site_addr(ch, name):
+    return ch['kbd']['site'] if name == 'KBD' else ch['sites'][name]
 
 
 def layout(ch):
-    """BASE/END/STATE and the four arena patches (address, old word, new word)."""
+    """BASE/END/STATE and the four arena patches (addi address, old lo, new hi, new lo).
+    Each addi is preceded by the lis it pairs with; that lis moves too if END
+    needs a different high half."""
     base = ch['arena_lo']
     end = base + ch.get('hook_size', HOOK_SIZE)
     assert end % 32 == 0
@@ -160,10 +189,11 @@ def layout(ch):
         d = v - (ch['lis'] << 16)
         assert -0x8000 <= d < 0x8000, hex(v)
         return d & 0xFFFF
+    hi = ((end + 0x8000) >> 16) & 0xFFFF
     arena = []
     for i, a in enumerate(ch['arena']):
         old_lo = lo(base) if i < 2 else lo(ch['stack_end'])
-        arena.append((a, old_lo, lo(end)))
+        arena.append((a, old_lo, hi, end & 0xFFFF))
     return base, end, end - 0x100, arena
 
 
@@ -187,21 +217,29 @@ def run(cmd):
 def build_blob(ch, base, state, debug_feed=False):
     tmp = tempfile.mkdtemp(prefix='fcpad')
     src = os.path.join(HERE, 'src')
-    D = ['-D%s=0x%08Xu' % kv for kv in dict(ch['defs'], STATE=state).items()]
+    defs = dict(ch['defs'], STATE=state)
+    if 'kbd' in ch:
+        defs.update(ch['kbd']['defs'])
+    D = ['-D%s=0x%08Xu' % kv for kv in defs.items()]
     if ch.get('sdk', 2007) == 2009:
         D.append('-DSDK2009')
+    if 'kbd' in ch:
+        D.append('-DKBD')
     if debug_feed:
         D.append('-DDEBUG_FEED')
+    objs = [tmp + '/hooks.o', tmp + '/gc.o', tmp + '/motion.o']
     run([CC + 'gcc'] + CFLAGS + ['-msoft-float'] + D + ['-c', src + '/gc.c', '-o', tmp + '/gc.o'])
     run([CC + 'gcc'] + CFLAGS + ['-mhard-float'] + D + ['-c', src + '/motion.c', '-o', tmp + '/motion.o'])
+    if 'kbd' in ch:
+        run([CC + 'gcc'] + CFLAGS + ['-msoft-float'] + D + ['-c', src + '/kbd.c', '-o', tmp + '/kbd.o'])
+        objs.append(tmp + '/kbd.o')
     run([CC + 'gcc', '-mbig-endian', '-c', '-x', 'assembler-with-cpp'] + D + [src + '/hooks.S', '-o', tmp + '/hooks.o'])
     ld = open(tmp + '/link.ld', 'w')
     ld.write('SECTIONS {\n  . = 0x%08X;\n  .text : { *(.hooks) *(.text .text.*) *(.rodata .rodata.*) }\n'
              '  /DISCARD/ : { *(.comment) *(.eh_frame) *(.note*) *(.gnu.attributes) }\n}\n' % base)
     ld.close()
-    syms = ['--defsym=RET_%s=0x%08X' % (n, ch['sites'][n] + 4) for n in sites(ch)]
-    run([CC + 'ld', '-T', tmp + '/link.ld', '--no-undefined', '-o', tmp + '/b.elf'] + syms +
-        [tmp + '/hooks.o', tmp + '/gc.o', tmp + '/motion.o'])
+    syms = ['--defsym=RET_%s=0x%08X' % (n, site_addr(ch, n) + 4) for n in sites(ch)]
+    run([CC + 'ld', '-T', tmp + '/link.ld', '--no-undefined', '-o', tmp + '/b.elf'] + syms + objs)
     # no data/bss outside .text allowed: everything must live in the one section
     hdr = subprocess.check_output([CC + 'objdump', '-h', tmp + '/b.elf']).decode()
     for line in hdr.splitlines():
@@ -306,22 +344,33 @@ def patch_dol(data, clock=False, debug_feed=False):
         print('clock patch applied')
     blob, syms = build_blob(ch, base, state, debug_feed)
     for name, (orig, stub) in sites(ch).items():
-        cur = dol.word(ch['sites'][name])
+        cur = dol.word(site_addr(ch, name))
         if cur != orig:
             raise SystemExit('%s site 0x%08X: found 0x%08X, want 0x%08X (already patched?)' % (
-                name, ch['sites'][name], cur, orig))
-    for addr, old_lo, new_lo in arena:
+                name, site_addr(ch, name), cur, orig))
+    for addr, old_lo, new_hi, new_lo in arena:
         cur = dol.word(addr)
         if cur & 0xFFFF != old_lo or cur >> 26 != 14:
             raise SystemExit('arena site 0x%08X: found 0x%08X' % (addr, cur))
+        lis = dol.word(addr - 4)            # lis rA,hi right before addi rD,rA,lo
+        if lis >> 26 != 15 or (lis >> 16) & 31 or (lis >> 21) & 31 != (cur >> 16) & 31 or lis & 0xFFFF != ch['lis']:
+            raise SystemExit('arena site 0x%08X: no matching lis before it (0x%08X)' % (addr, lis))
+        dol.put(addr - 4, (lis & 0xFFFF0000) | new_hi)
         dol.put(addr, (cur & 0xFFFF0000) | new_lo)
+    for addr, old, new, what in ch.get('patches', []):
+        for j, (o, n) in enumerate(zip(old, new)):
+            cur = dol.word(addr + 4 * j)
+            if cur != o:
+                raise SystemExit('patch 0x%08X: found 0x%08X, want 0x%08X' % (addr + 4 * j, cur, o))
+            dol.put(addr + 4 * j, n)
+        print('  patched 0x%08X: %s' % (addr, what))
     payload = blob + b'\0' * (end - base - len(blob))           # code, then zeroed state up to END
     slot = dol.add_text(base, payload)
     only = os.environ.get('HOOKS')            # debugging: HOOKS=POLL,SAMPLE plants only those
     for name, (orig, stub) in sites(ch).items():
         if only is not None and name not in only.split(','):
             continue
-        site = ch['sites'][name]
+        site = site_addr(ch, name)
         dol.put(site, b_to(site, syms[stub]))
         print('  %-8s 0x%08X -> %-13s 0x%08X' % (name, site, stub, syms[stub]))
     print('hook section: DOL slot %d, 0x%08X-0x%08X (%d bytes code, state at 0x%08X); arena now starts at 0x%08X' % (

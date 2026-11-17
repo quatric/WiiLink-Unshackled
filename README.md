@@ -19,6 +19,15 @@ The channel is recognised from its main DOL. `--clock` (Forecast Channel only) a
 
 You need devkitPPC (set `DEVKITPPC`; default `/opt/devkitpro/devkitPPC`). The `wad` mode also needs Sharpii (set `SHARPII`). The output WAD is fakesigned.
 
+## Everybody Votes Channel extras
+
+The Everybody Votes Channel build also gets two more patches:
+
+* **USB keyboard:** type into the on-screen keyboard from a USB keyboard (US layout). Letters, digits, symbols and Space type; Backspace deletes; Left/Right move the cursor; Enter is OK; Esc is Quit. Keys auto-repeat when held. The on-screen keyboard keeps working as before.
+* **No daily suggestion limit:** "Suggest a Question" no longer stops at "You can suggest only one poll per day." Any limit WiiLink's server applies is unaffected.
+
+The channel's text-input library is an early build of the SDK's SoftwareKeyboard, from before it supported hardware keyboards. `src/kbd.c` reads IOS's `/dev/usb/kbd` itself, once per frame while the on-screen keyboard is up. It sends key presses to the input form as the same commands the on-screen keys send. The device needs an IOS that has the USB keyboard module; if `/dev/usb/kbd` can't be opened, the patch does nothing.
+
 ## Controls
 
 | Wii Remote | Classic Controller | GameCube (port 1) |
@@ -52,7 +61,7 @@ Five hooks branch out of KPAD/WPAD:
 | BUTTONS | KPAD button compose | ORs Classic Controller buttons into the Wii Remote buttons. |
 | MOTION | After each sample is copied out | Writes the stick pointer and twist into the caller's copy only, so KPAD's IR tracking state is never touched. |
 
-The code (and 0x100 bytes of state) takes the first 0x1000 bytes of the OS arena (0x2000 in the Nintendo Channel). That's `__ArenaLo`, right above the debugger stack. OSInit's arena constants move up past it, so the game never allocates over it.
+The code (and 0x100 bytes of state) takes the first 0x1000 bytes of the OS arena (0x2000 in the Nintendo and Everybody Votes Channels). That's `__ArenaLo`, right above the debugger stack. OSInit's arena constants (each a `lis`/`addi` pair) move up past it, so the game never allocates over it.
 
 ### The boot loader packs sections
 

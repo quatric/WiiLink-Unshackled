@@ -308,3 +308,18 @@ hook_motion:
     b       RET_MOTION
 
 #endif
+
+#ifdef KBD
+/* Software keyboard state's per-frame calc, right before inputForm->calc()
+ * (r3 = input form, r31 = keyboard state): USB keyboard -> input form */
+    .globl hook_kbd
+hook_kbd:
+    SAVE
+    mr      4, 31
+    bl      kbd_frame
+    RESTORE_ALL
+    lwz     0, 0x0c(1)
+    addi    1, 1, FRAME
+    lwz     12, 0(3)                /* replaced instruction */
+    b       RET_KBD
+#endif
