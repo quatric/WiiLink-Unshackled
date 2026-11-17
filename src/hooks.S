@@ -360,6 +360,21 @@ hook_kbd:
     b       RET_KBD
 #endif
 
+#ifdef CDBSD
+/* Photo Channel Message Board scan, at the CDBDatabaseSearch() call's last
+ * argument (r10 = where to look): mount the SD card for CDB, then look on
+ * NAND and SD (3) instead of NAND only (1) */
+    .globl hook_cdbsd
+hook_cdbsd:
+    SAVE
+    bl      cdbsd_mount
+    RESTORE_ALL
+    lwz     0, 0x0c(1)
+    addi    1, 1, FRAME
+    li      10, 3                   /* was li r10,1 */
+    b       RET_CDBSD
+#endif
+
 #ifdef TILT
 /* Forecast Channel globe tilt angles (degrees), the News Channel's table:
  * index 5 is level, 0 and 10 are tilted all the way over either way */

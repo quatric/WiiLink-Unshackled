@@ -84,6 +84,18 @@ The Check Mii Out Channel still contains its developers' debug overlay. The over
 python3 build.py wad "Check Mii Out Channel (USA) (WiiLink).wad" "Check Mii Out Channel (USA) (WiiLink) [CC & GC + gold pants + debug menu].wad" --debug-menu
 ```
 
+## Photo Channel: Message Board photos on the SD card
+
+When the Wii Message Board fills up, the Wii Menu moves older posts to the SD card, under `SD:/private/wii/title/HAEA/`. The Photo Channel's "View Wii Message Board photos" only showed the photos still on NAND. It now also shows the ones on the SD card.
+
+The channel reads the Message Board through Nintendo's CDB library, the same one the Wii Menu uses. CDB can read posts on SD, including checking their signature and decrypting them, but the Photo Channel never mounted the card for it and its scan asked for NAND posts only. `src/cdbsd.c` runs before each scan (`hook_cdbsd`):
+
+* It mounts the SD card as the read-only drive "SD" of CDB's file library (VF). Sectors are read with the SD card driver of the channel's own SD library, the one behind "Digital Camera/Cell Phone".
+* It sets CDB's "SD mounted" flag, and the scan asks for NAND and SD posts.
+* The drive is mounted afresh for every scan, so a swapped card is read from scratch. With no card in, the scan is NAND-only as before.
+
+Tested in Dolphin with a photo post that exists only on the SD card: it was found and its thumbnail was shown, also when the view was opened again. Without a card, NAND photos showed as before. The SD post was made by a script in the format CDB reads, not by the Wii Menu itself.
+
 ## Controls
 
 | Wii Remote | Classic Controller | GameCube (port 1) |
@@ -119,7 +131,7 @@ Five hooks branch out of KPAD/WPAD:
 | BUTTONS | KPAD button compose | ORs Classic Controller buttons into the Wii Remote buttons. |
 | MOTION | After each sample is copied out | Writes the stick pointer and twist into the caller's copy only, so KPAD's IR tracking state is never touched. |
 
-The code and 0x200 bytes of state take the first 0x1800 bytes of the OS arena (0x2000 in the Nintendo and Everybody Votes Channels). The state is split into 0x00 for gc.c, 0x40 for motion.c and 0x100 for kbd.c. That's `__ArenaLo`, right above the debugger stack. OSInit's arena constants (each a `lis`/`addi` pair) move up past it, so the game never allocates over it.
+The code and 0x200 bytes of state take the first 0x1800 bytes of the OS arena (0x2000 in the Nintendo, Everybody Votes and Photo Channels). The state is split into 0x00 for gc.c, 0x40 for motion.c and 0x100 for kbd.c. That's `__ArenaLo`, right above the debugger stack. OSInit's arena constants (each a `lis`/`addi` pair) move up past it, so the game never allocates over it.
 
 Wii no Ma / Wii Room needs two exceptions:
 

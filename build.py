@@ -197,6 +197,7 @@ CHANNELS = {
     # code with the copy-out loops' registers allocated differently
     'photo': {
         'title': 'Photo Channel 1.1 (HAYA)',
+        'hook_size': 0x2000,
         'dol_size': 2300448,
         'sdk': 2009,
         'arena_lo': 0x80397680, 'stack_end': 0x80395668, 'lis': 0x8039,
@@ -218,6 +219,31 @@ CHANNELS = {
         'site_words': {'MOTION': 0x3718FFFF, 'MOTION2': 0x3739FFFF},
         'asm_defs': {'M1_DEST': 25, 'M1_LEFT': 24, 'M2_DEST': 27, 'M2_LEFT': 25},
         'clock': None,
+        # Wii Message Board photos from the SD card too (src/cdbsd.c)
+        'cdbsd': {
+            'site': 0x8000E6FC,                 # li r10,1: CDBDatabaseSearch(..., NAND only)
+            'defs': {
+                'VF_LOOKUP': 0x8007348C,        # drive name -> index
+                'VF_ATTACH': 0x800716A0,        # new drive from the disk table template
+                'VF_SETNAME': 0x800734EC,
+                'VF_VOLUME': 0x800719E4,        # drive index -> volume
+                'VF_DRV_PRESENT': 0x800741C8,   # (disk, 1): medium present
+                'VF_NOTIFY_INSERT': 0x80058A48, # disk manager: medium inserted
+                'VF_UNMOUNT': 0x8006FA1C,       # VFUnmountDrive(name): unmount and detach
+                'VF_MOUNT': 0x8006F79C,         # open the partition, mount
+                'VF_DISK_TMPL': 0x80382FD8,     # {NAND file driver init, 0}
+                'VF_LOCK_ON': 0x8038395C,
+                'VF_MUTEX': 0x8025FB20,
+                'FN_OSLOCKMUTEX': 0x8014EA04,
+                'FN_OSUNLOCKMUTEX': 0x8014EAE0,
+                'FA_SD_STATE': 0x802FFF20,      # SD card driver: bit 0 = initialised, +16 card in
+                'FA_SD_MOUNT': 0x8009D5D0,      # card init (once; later calls return 0)
+                'FA_SD_READ': 0x8009D870,
+                'FA_SD_BUSY': 0x80383984,       # SDIO request in flight
+                'FA_SD_INFO': 0x8009DA20,
+                'CDB_SD': 0x802370A8,           # CDB SD paths / flags (+4: SD mounted)
+            },
+        },
     },
     # The WiiLink WADs below store content 1 LZ-compressed (main_dol() unpacks it).
     # Food Channel (Standard, Domino's, Just Eat) and Demae Channel: the Photo
@@ -389,11 +415,17 @@ def sites(ch):
         s[name] = (word, s[name][1])
     if 'kbd' in ch:
         s['KBD'] = (0x81830000, 'hook_kbd')       # lwz r12,0(r3)
+    if 'cdbsd' in ch:
+        s['CDBSD'] = (0x39400001, 'hook_cdbsd')   # li r10,1
     return s
 
 
 def site_addr(ch, name):
-    return ch['kbd']['site'] if name == 'KBD' else ch['sites'][name]
+    if name == 'KBD':
+        return ch['kbd']['site']
+    if name == 'CDBSD':
+        return ch['cdbsd']['site']
+    return ch['sites'][name]
 
 
 def layout(ch):
@@ -486,6 +518,8 @@ def build_blob(ch, base, state, debug_feed=False):
     defs = dict(ch['defs'], STATE=state)
     if 'kbd' in ch:
         defs.update(ch['kbd']['defs'])
+    if 'cdbsd' in ch:
+        defs.update(ch['cdbsd']['defs'])
     D = ['-D%s=0x%08Xu' % kv for kv in defs.items()]
     if ch.get('sdk', 2007) == 2009:
         D.append('-DSDK2009')
@@ -494,6 +528,8 @@ def build_blob(ch, base, state, debug_feed=False):
     D += ['-D%s=%.4ff' % kv for kv in ch.get('pointer', {}).items()]
     if 'kbd' in ch:
         D.append('-DKBD')
+    if 'cdbsd' in ch:
+        D.append('-DCDBSD')
     if debug_feed:
         D.append('-DDEBUG_FEED')
     if 'repeat' in ch:
@@ -509,6 +545,9 @@ def build_blob(ch, base, state, debug_feed=False):
     if 'kbd' in ch:
         run([CC + 'gcc'] + CFLAGS + ['-msoft-float'] + D + ['-c', src + '/kbd.c', '-o', tmp + '/kbd.o'])
         objs.append(tmp + '/kbd.o')
+    if 'cdbsd' in ch:
+        run([CC + 'gcc'] + CFLAGS + ['-msoft-float'] + D + ['-c', src + '/cdbsd.c', '-o', tmp + '/cdbsd.o'])
+        objs.append(tmp + '/cdbsd.o')
     run([CC + 'gcc', '-mbig-endian', '-c', '-x', 'assembler-with-cpp'] + D + [src + '/hooks.S', '-o', tmp + '/hooks.o'])
     ld = open(tmp + '/link.ld', 'w')
     ld.write('SECTIONS {\n  . = 0x%08X;\n  .text : { *(.hooks) *(.text .text.*) *(.rodata .rodata.*) }\n'
