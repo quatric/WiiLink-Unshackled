@@ -1,6 +1,6 @@
 # WiiLink-Unshackled
 
-Adds Classic Controller and GameCube controller support to WiiLink's USA channels:
+Adds Classic Controller and GameCube controller support to WiiLink's USA channels and to the Photo Channel:
 
 | Channel | Title | Main DOL (content 1) |
 |---|---|---|
@@ -9,13 +9,14 @@ Adds Classic Controller and GameCube controller support to WiiLink's USA channel
 | Everybody Votes Channel | HAJE | 2,653,152 bytes |
 | Check Mii Out Channel | HAPE | 3,410,240 bytes |
 | Nintendo Channel | HATE | 3,988,896 bytes |
+| Photo Channel 1.1 | HAYA | 2,300,448 bytes |
 
 ```
 python3 build.py wad "<channel> (USA) (WiiLink).wad" out.wad [--clock] [--accuweather]
 python3 build.py dol 00000001.app out.app [--clock]
 ```
 
-The channel is recognised from its main DOL. `--clock` (Forecast and News Channels) also applies `forecast_us_clock_patch.py` or `news_us_clock_patch.py`. Those enable the clock on US consoles with a 12-hour a.m./p.m. display.
+The Photo Channel isn't a WiiLink channel: use the Photo Channel 1.1 system title WAD (`Photo Channel v1.1 (World) (v3) (Channel).wad`). The channel is recognised from its main DOL. `--clock` (Forecast and News Channels) also applies `forecast_us_clock_patch.py` or `news_us_clock_patch.py`. Those enable the clock on US consoles with a 12-hour a.m./p.m. display.
 
 You need devkitPPC (set `DEVKITPPC`; default `/opt/devkitpro/devkitPPC`). The `wad` mode also needs Sharpii (set `SHARPII`). The output WAD is fakesigned.
 
@@ -105,6 +106,8 @@ Forecast, News, Everybody Votes and Check Mii Out share the June 2007 SDK. The N
 * **Sample ring:** 16 inline slots at `k+0x13C` plus an optional external buffer (`k+0x4BC`/`k+0x4C0`), instead of 16 slots at `k+0x110`.
 * **Sample count:** keeps one already-read sample, so "nothing new" is a count of 1, not 0.
 * **Copy-out:** two sites (MOTION and MOTION2), and the output `KPADStatus` is 0xB0 bytes. The field offsets the hooks use are unchanged.
+
+The Photo Channel's September 2008 KPAD is the same code with two differences. The per-channel KPAD block is 0x5C0 bytes instead of 0x570, and the copy-out loops use different registers. The profile passes those registers to `hooks.S` through `asm_defs` (`M1_DEST`/`M1_LEFT`, `M2_DEST`/`M2_LEFT`), and the replaced loop words through `site_words`.
 
 ### Porting to another channel
 

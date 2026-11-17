@@ -162,6 +162,32 @@ CHANNELS = {
                   'BUTTONS': 0x8022EE54, 'MOTION': 0x80231B2C, 'MOTION2': 0x80231C9C},
         'clock': None,
     },
+    # Photo Channel 1.1 (system title, not WiiLink): a Sept 2008 KPAD, the 2009
+    # code with the copy-out loops' registers allocated differently
+    'photo': {
+        'title': 'Photo Channel 1.1 (HAYA)',
+        'dol_size': 2300448,
+        'sdk': 2009,
+        'arena_lo': 0x80397680, 'stack_end': 0x80395668, 'lis': 0x8039,
+        'arena': [0x80149090, 0x80149138, 0x801490E0, 0x8014916C],
+        'defs': {
+            'SI_TYPES': 0x802231B8,
+            'SI_BUSY': 0x802231A0,
+            'SI_SHADOW': 0x802231A4,
+            'FN_SIGETTYPE': 0x80157D50,
+            'FN_OSDISABLE': 0x8014D864,
+            'FN_OSRESTORE': 0x8014D88C,
+            'WPAD_TBL': 0x803446B0,
+            'KPAD_BASE': 0x80347E48,
+            'KPAD_STRIDE': 0x5C0,
+        },
+        'sites': {'POLL': 0x8018B6D0, 'SAMPLE': 0x8018B848, 'PROBE': 0x8017F5A0,
+                  'BUTTONS': 0x801891D4, 'MOTION': 0x8018BDB8, 'MOTION2': 0x8018BF34},
+        # copy-out loops: per-sample entry r25 / left r24, compose-once entry r27 / left r25
+        'site_words': {'MOTION': 0x3718FFFF, 'MOTION2': 0x3739FFFF},
+        'asm_defs': {'M1_DEST': 25, 'M1_LEFT': 24, 'M2_DEST': 27, 'M2_LEFT': 25},
+        'clock': None,
+    },
 }
 HOOK_SIZE = 0x1800              # default: code + state, carved from the arena start
 STATE_SIZE = 0x200             # gc.c 0x00-0x40, motion.c 0x40-0x100, kbd.c 0x100-0x200
@@ -188,6 +214,8 @@ SITES = {
 
 def sites(ch):
     s = dict(SITES[ch.get('sdk', 2007)])
+    for name, word in ch.get('site_words', {}).items():
+        s[name] = (word, s[name][1])
     if 'kbd' in ch:
         s['KBD'] = (0x81830000, 'hook_kbd')       # lwz r12,0(r3)
     return s
@@ -242,6 +270,7 @@ def build_blob(ch, base, state, debug_feed=False):
     D = ['-D%s=0x%08Xu' % kv for kv in defs.items()]
     if ch.get('sdk', 2007) == 2009:
         D.append('-DSDK2009')
+    D += ['-D%s=%d' % kv for kv in ch.get('asm_defs', {}).items()]
     if 'kbd' in ch:
         D.append('-DKBD')
     if debug_feed:

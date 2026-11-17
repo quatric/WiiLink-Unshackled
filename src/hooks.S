@@ -177,15 +177,26 @@ hook_buttons:
 9:  andi.   9, 6, 0x9fff            /* replaced instruction */
     b       RET_BUTTONS
 
-/* KPADiRead copy-out, per-sample mode: entry r24 was just written, r26 = KPAD
- * block, r25 = samples left, r22 = samples this read */
+/* The copy-out loops' registers (Nintendo Channel defaults; the Photo
+ * Channel's KPAD, built Sept 2008, allocates them differently):
+ *   M1_*: per-sample mode, M2_*: compose-once mode
+ *   DEST = entry just written, LEFT = samples left; r26 = KPAD block,
+ *   r22 = samples this read in both */
+#ifndef M1_DEST
+#define M1_DEST 24
+#define M1_LEFT 25
+#define M2_DEST 27
+#define M2_LEFT 20
+#endif
+
+/* KPADiRead copy-out, per-sample mode */
     .globl hook_motion
 hook_motion:
     SAVE
     SAVE_FP
-    mr      3, 24
+    mr      3, M1_DEST
     mr      4, 26
-    subf    5, 25, 22
+    subf    5, M1_LEFT, 22
     cntlzw  5, 5
     srwi    5, 5, 5
     bl      cc_motion_k
@@ -193,17 +204,17 @@ hook_motion:
     RESTORE_ALL
     lwz     0, 0x0c(1)
     addi    1, 1, FRAME
-    addic.  25, 25, -1              /* replaced instruction */
+    addic.  M1_LEFT, M1_LEFT, -1    /* replaced instruction */
     b       RET_MOTION
 
-/* KPADiRead copy-out, compose-once mode: entry r27, samples left r20 */
+/* KPADiRead copy-out, compose-once mode */
     .globl hook_motion2
 hook_motion2:
     SAVE
     SAVE_FP
-    mr      3, 27
+    mr      3, M2_DEST
     mr      4, 26
-    subf    5, 20, 22
+    subf    5, M2_LEFT, 22
     cntlzw  5, 5
     srwi    5, 5, 5
     bl      cc_motion_k
@@ -211,7 +222,7 @@ hook_motion2:
     RESTORE_ALL
     lwz     0, 0x0c(1)
     addi    1, 1, FRAME
-    addic.  20, 20, -1              /* replaced instruction */
+    addic.  M2_LEFT, M2_LEFT, -1    /* replaced instruction */
     b       RET_MOTION2
 
 #else
