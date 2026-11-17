@@ -20,7 +20,7 @@
 #include "sdbin.h"
 #include "title.h"
 
-#define VERSION "1.1"
+#define VERSION "1.0"
 #define MAX_TITLES 48
 #define LIST_ROWS 14                    /* channels shown at once; Left / Right jump a page */
 
