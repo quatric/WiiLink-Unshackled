@@ -4,6 +4,7 @@
 
   build.py dol <00000001.app in> <00000001.app out> [--clock] [--debug-feed] [--debug-menu]
   build.py wad <channel .wad> <out.wad> [--clock] [--accuweather] [--debug-feed] [--debug-menu]
+  build.py export <patches.bin> <channel .wad>...    (for the Wii app, wii/)
 
 The channel is recognised from its main DOL.  Builds the hooks in src/ with
 devkitPPC, links them at the start of the OS arena (right above the main
@@ -669,66 +670,217 @@ class Dol:
         return slot
 
 
+# The patch, feature by feature.  Every feature but 'pad' is a list of word
+# changes; 'pad' (the controller hooks) is word changes too, plus the hook
+# section added to the DOL.  build.py applies the features it is asked for;
+# `export` writes all of them for the Wii app (wii/).
+# Channels that misbehave when run from the SD card: the Wii app only looks for them on the NAND.
+NAND_ONLY = ('forecast', 'news', 'photo')
+PATCH_FEATURES = {      # channel: (id, name) of its 'patches'
+    'forecast': ('tilt', 'Globe tilts both ways'),
+    'evc': ('nolimit', 'No daily suggestion limit'),
+    'cmoc': ('goldpants', 'Gold pants Miis can be used'),
+}
+FEATURE_INFO = {        # id: (name, on by default, needs the hook section)
+    'pad': ('Classic Controller and GameCube pads', True, False),
+    'tilt': (None, True, True),
+    'nolimit': (None, True, False),
+    'goldpants': (None, True, False),
+    'kbd': ('USB keyboard', True, True),
+    'cdbsd': ('Message Board photos from the SD card', True, True),
+    'clock': ('Clock on US consoles (12-hour)', True, False),
+    'debugmenu': ('Debug menu (hold 1+2)', False, False),
+}
+
+
+class Plan:
+    """What patching `data` (a clean main DOL) does: per feature, a list of
+    (file offset, old word, new word) in the original DOL, and the hook section:
+    the new 0x100-byte header and payload, which goes in between data[0x100:at]
+    and data[at:end]."""
+    def __init__(self, data, debug_feed=False):
+        self.key, self.ch = detect(data)
+        ch = self.ch
+        dol = Dol(data)
+        self.groups = {}
+
+        def word(feat, addr, old, new, allow_new=False):
+            cur = dol.word(addr)
+            if cur != old and not (allow_new and cur == new):
+                raise SystemExit('%s: 0x%08X: found 0x%08X, want 0x%08X (already patched?)' % (feat, addr, cur, old))
+            self.groups.setdefault(feat, []).append((dol.off(addr), old, new))
+
+        base, self.end_addr, self.state, arena = layout(ch)
+        self.base = base
+        self.blob, self.syms = build_blob(ch, base, self.state, debug_feed)
+        for lis_a, addr, old_los, new_hi, new_lo in arena:
+            cur = dol.word(addr)
+            if cur & 0xFFFF not in old_los or cur >> 26 != 14:
+                raise SystemExit('arena site 0x%08X: found 0x%08X' % (addr, cur))
+            lis = dol.word(lis_a)               # lis rA,hi that addi rD,rA,lo pairs with
+            if lis >> 26 != 15 or (lis >> 16) & 31 or (lis >> 21) & 31 != (cur >> 16) & 31 or lis & 0xFFFF != ch['lis']:
+                raise SystemExit('arena site 0x%08X: no matching lis at 0x%08X (0x%08X)' % (addr, lis_a, lis))
+            word('pad', lis_a, lis, (lis & 0xFFFF0000) | new_hi)
+            word('pad', addr, cur, (cur & 0xFFFF0000) | new_lo)
+        only = os.environ.get('HOOKS')            # debugging: HOOKS=POLL,SAMPLE plants only those
+        for name, (orig, stub) in sites(ch).items():
+            if only is not None and name not in only.split(','):
+                continue
+            feat = {'KBD': 'kbd', 'CDBSD': 'cdbsd'}.get(name, 'pad')
+            site = site_addr(ch, name)
+            word(feat, site, orig, b_to(site, self.syms[stub]))
+        if ch.get('patches'):
+            for addr, old, new, what in ch['patches']:
+                for j, (o, n) in enumerate(zip(old, new)):
+                    word(PATCH_FEATURES[self.key][0], addr + 4 * j, o, n)
+        for addr, old, new, what in ch.get('debug_patches', []):
+            for j, (o, n) in enumerate(zip(old, new)):
+                word('debugmenu', addr + 4 * j, o, n)
+        for lis_a, addi_a, sym in ch.get('sympatches', []):
+            lis, addi, v = dol.word(lis_a), dol.word(addi_a), self.syms[sym]
+            if lis >> 26 != 15 or addi >> 26 != 14 or (addi >> 16) & 31 != (lis >> 21) & 31:
+                raise SystemExit('sympatch 0x%08X/0x%08X: not a lis/addi pair' % (lis_a, addi_a))
+            word('tilt', lis_a, lis, (lis & 0xFFFF0000) | ((v + 0x8000) >> 16 & 0xFFFF))
+            word('tilt', addi_a, addi, (addi & 0xFFFF0000) | (v & 0xFFFF))
+        if ch['clock']:
+            sys.path.insert(0, HERE)
+            clk = __import__(ch['clock'])
+            for addr, old, new, desc in clk.PATCHES:
+                for j, (o, n) in enumerate(zip(old, new)):
+                    word('clock', addr + 4 * j, o, n, allow_new=True)
+        # the hook section: code, then zeroed state
+        self.payload = self.blob + b'\0' * (self.state + STATE_SIZE - base - len(self.blob))
+        n = len(data)
+        sec = Dol(data)
+        self.slot = sec.add_text(base, self.payload, ch.get('text_slot', False))
+        self.header = bytes(sec.d[:0x100])
+        if ch.get('text_slot'):
+            self.at = sec.field(0, self.slot)
+            self.cut = n
+        else:
+            self.at = self.cut = sec.field(0, self.slot)
+        assert bytes(sec.d) == self.header + data[0x100:self.at] + self.payload + data[self.at:self.cut]
+
+    def features(self):
+        """[(id, name, on by default, needs 'pad')] for this channel, 'pad' first"""
+        out = []
+        for f in ['pad'] + sorted(k for k in self.groups if k != 'pad'):
+            name, on, needs = FEATURE_INFO[f]
+            if name is None:
+                name = PATCH_FEATURES[self.key][1]
+            out.append((f, name, on, needs))
+        return out
+
+    def apply(self, data, feats):
+        d = bytearray(data)
+        for f in feats:
+            for off, old, new in self.groups.get(f, []):
+                d[off:off + 4] = struct.pack('>I', new)
+        if 'pad' in feats:
+            d = self.header + d[0x100:self.at] + self.payload + d[self.at:self.cut]
+        return bytes(d)
+
+
 def patch_dol(data, clock=False, debug_feed=False, debug_menu=False):
     key, ch = detect(data)
     if debug_menu and not ch.get('debug_patches'):
         raise SystemExit('--debug-menu is only for the Check Mii Out Channel')
+    if clock and not ch['clock']:
+        raise SystemExit('--clock is only for the Forecast and News Channels')
     print('main DOL:', ch['title'])
-    base, end, state, arena = layout(ch)
-    dol = Dol(data)
+    p = Plan(data, debug_feed)
+    feats = [f for f in p.groups if f not in ('clock', 'debugmenu')]
     if clock:
-        if not ch['clock']:
-            raise SystemExit('--clock is only for the Forecast and News Channels')
-        sys.path.insert(0, HERE)
-        clk = __import__(ch['clock'])
-        for addr, old, new, desc in clk.PATCHES:
-            for j, (o, n) in enumerate(zip(old, new)):
-                cur = dol.word(addr + 4 * j)
-                if cur not in (o, n):
-                    raise SystemExit('clock site 0x%08X: unexpected word 0x%08X' % (addr + 4 * j, cur))
-                dol.put(addr + 4 * j, n)
-        print('clock patch applied')
-    blob, syms = build_blob(ch, base, state, debug_feed)
-    for name, (orig, stub) in sites(ch).items():
-        cur = dol.word(site_addr(ch, name))
-        if cur != orig:
-            raise SystemExit('%s site 0x%08X: found 0x%08X, want 0x%08X (already patched?)' % (
-                name, site_addr(ch, name), cur, orig))
-    for lis_a, addr, old_los, new_hi, new_lo in arena:
-        cur = dol.word(addr)
-        if cur & 0xFFFF not in old_los or cur >> 26 != 14:
-            raise SystemExit('arena site 0x%08X: found 0x%08X' % (addr, cur))
-        lis = dol.word(lis_a)               # lis rA,hi that addi rD,rA,lo pairs with
-        if lis >> 26 != 15 or (lis >> 16) & 31 or (lis >> 21) & 31 != (cur >> 16) & 31 or lis & 0xFFFF != ch['lis']:
-            raise SystemExit('arena site 0x%08X: no matching lis at 0x%08X (0x%08X)' % (addr, lis_a, lis))
-        dol.put(lis_a, (lis & 0xFFFF0000) | new_hi)
-        dol.put(addr, (cur & 0xFFFF0000) | new_lo)
-    for addr, old, new, what in ch.get('patches', []) + (ch['debug_patches'] if debug_menu else []):
-        for j, (o, n) in enumerate(zip(old, new)):
-            cur = dol.word(addr + 4 * j)
-            if cur != o:
-                raise SystemExit('patch 0x%08X: found 0x%08X, want 0x%08X' % (addr + 4 * j, cur, o))
-            dol.put(addr + 4 * j, n)
-        print('  patched 0x%08X: %s' % (addr, what))
-    for lis_a, addi_a, sym in ch.get('sympatches', []):
-        lis, addi, v = dol.word(lis_a), dol.word(addi_a), syms[sym]
-        if lis >> 26 != 15 or addi >> 26 != 14 or (addi >> 16) & 31 != (lis >> 21) & 31:
-            raise SystemExit('sympatch 0x%08X/0x%08X: not a lis/addi pair' % (lis_a, addi_a))
-        dol.put(lis_a, (lis & 0xFFFF0000) | ((v + 0x8000) >> 16 & 0xFFFF))
-        dol.put(addi_a, (addi & 0xFFFF0000) | (v & 0xFFFF))
-        print('  patched 0x%08X/0x%08X: -> %s 0x%08X' % (lis_a, addi_a, sym, v))
-    payload = blob + b'\0' * (state + STATE_SIZE - base - len(blob))   # code, then zeroed state
-    slot = dol.add_text(base, payload, ch.get('text_slot', False))
-    only = os.environ.get('HOOKS')            # debugging: HOOKS=POLL,SAMPLE plants only those
-    for name, (orig, stub) in sites(ch).items():
-        if only is not None and name not in only.split(','):
-            continue
-        site = site_addr(ch, name)
-        dol.put(site, b_to(site, syms[stub]))
-        print('  %-8s 0x%08X -> %-13s 0x%08X' % (name, site, stub, syms[stub]))
+        feats.append('clock')
+    if debug_menu:
+        feats.append('debugmenu')
+    for f in feats:
+        print('  %-9s %d words' % (f, len(p.groups.get(f, []))))
     print('hook section: DOL slot %d, 0x%08X-0x%08X (%d bytes code, state at 0x%08X); arena now starts at 0x%08X' % (
-        slot, base, base + len(payload), len(blob), state, end))
-    return bytes(dol.d)
+        p.slot, p.base, p.base + len(p.payload), len(p.blob), p.state, p.end_addr))
+    return p.apply(data, feats)
+
+
+def tmd_contents(tmd):
+    """{index: (content id, size, sha1)} of a TMD"""
+    n = struct.unpack('>H', tmd[0x1DE:0x1E0])[0]
+    out = {}
+    for i in range(n):
+        r = tmd[0x1E4 + 0x24 * i:0x1E4 + 0x24 * (i + 1)]
+        cid, idx, typ, size = struct.unpack('>IHHQ', r[:16])
+        out[idx] = (cid, size, r[16:36])
+    return out
+
+
+def export(out, wads):
+    """The patches for the Wii app (wii/README.md describes the format), from the WiiLink WADs
+    (and the Photo Channel 1.1 WAD) it should recognise."""
+    pool, pooled = bytearray(), {}
+
+    def put(b):
+        if b not in pooled:
+            while len(pool) % 32:
+                pool.append(0)
+            pooled[b] = len(pool)
+            pool.extend(b)
+        return pooled[b]
+    targets, seen = [], set()
+    for w in wads:
+        tmp = tempfile.mkdtemp(prefix='fcexp')
+        run([SHARPII, 'WAD', '-u', w, tmp + '/u'])
+        tmdf = [f for f in os.listdir(tmp + '/u') if f.endswith('.tmd')][0]
+        tmd = open(tmp + '/u/' + tmdf, 'rb').read()
+        tid = struct.unpack('>Q', tmd[0x18C:0x194])[0]
+        recs = tmd_contents(tmd)
+        app = open(tmp + '/u/00000001.app', 'rb').read()
+        if hashlib.sha1(app).digest() != recs[1][2]:
+            raise SystemExit('%s: content 1 does not match its TMD' % w)
+        if recs[1][2] in seen:            # Photo Prints = Digicam Print, Wii Room = Wii no Ma
+            ch = detect(main_dol(app))[1]
+            for t in range(len(targets)):
+                if targets[t][3] == recs[1][2]:
+                    targets[t] = (ch['title'].rsplit(' (', 1)[0],) + targets[t][1:]
+            print('same content 1 as another WAD:', w)
+            shutil.rmtree(tmp)
+            continue
+        seen.add(recs[1][2])
+        dol = main_dol(app)
+        p = Plan(dol)
+        name = os.path.basename(w)[:-4].replace(' (WiiLink)', '').replace(' (Channel)', '')
+        if name.startswith('Photo Channel'):
+            name = 'Photo Channel 1.1'
+        print('%-48s %016X %-10s %s' % (name, tid, p.key, ' '.join(f[0] for f in p.features())))
+        feats = []
+        if 'clock' in p.groups and tid & 0xFF != ord('E'):
+            raise SystemExit('%s: the clock patch is only for the US builds (EU/JP ones show the clock)' % w)
+        for fid, fname, on, needs in p.features():
+            words = b''.join(struct.pack('>III', *x) for x in p.groups.get(fid, []))
+            flags = (1 if on else 0) | (2 if needs else 0) | (4 if fid == 'pad' else 0)
+            feats.append((fid, fname, flags, len(p.groups.get(fid, [])), put(words) if words else 0))
+        c0 = (0, b'\0' * 20)           # content 0 (banner) patches: none yet
+        targets.append((name, tid, recs[1][1], recs[1][2], len(dol), hashlib.sha1(dol).digest(),
+                        app[0] if app[0] in (0x10, 0x11) and app[:4] != b'\0\0\1\0' else 0,
+                        put(p.header), p.at, p.cut, put(p.payload), len(p.payload), feats, c0,
+                        1 if p.key in NAND_ONLY else 0))
+        shutil.rmtree(tmp)
+    # header 0x20, targets 0x100 each, features 0x40 each, then the pool
+    nf = sum(len(t[12]) for t in targets)
+    pool_at = 0x20 + 0x100 * len(targets) + 0x40 * nf
+    pool_at = (pool_at + 31) & ~31
+    head = struct.pack('>4sIIIII', b'WLUP', 1, len(targets), 0x20, pool_at, pool_at + len(pool)).ljust(0x20, b'\0')
+    tab, ftab, fi = bytearray(), bytearray(), 0
+    for (name, tid, asz, asha, dsz, dsha, lz, hdr, at, cut, pay, plen, feats, c0, tflags) in targets:
+        e = struct.pack('>48sQI20sI20sIIIIIIII', name.encode()[:47], tid, asz, asha, dsz, dsha, lz,
+                        hdr, at, cut, pay, plen, len(feats), 0x20 + 0x100 * len(targets) + 0x40 * fi)
+        e += struct.pack('>Q20sI', c0[0], c0[1], tflags)
+        tab += e.ljust(0x100, b'\0')
+        for fid, fname, flags, n, off in feats:
+            ftab += struct.pack('>12s40sIII', fid.encode(), fname.encode()[:39], flags, n, off)
+            fi += 1
+    data = head + tab + ftab
+    data += b'\0' * (pool_at - len(data)) + pool
+    open(out, 'wb').write(data)
+    print('wrote %s: %d channels, %d bytes' % (out, len(targets), len(data)))
 
 
 def fakesign(path):
@@ -750,6 +902,8 @@ def fakesign(path):
 
 def main():
     a = [x for x in sys.argv[1:] if not x.startswith('--')]
+    if a[:1] == ['export'] and len(a) >= 3:
+        return export(a[1], a[2:])
     clock = '--clock' in sys.argv
     feed = '--debug-feed' in sys.argv
     accu = '--accuweather' in sys.argv

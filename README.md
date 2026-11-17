@@ -96,6 +96,12 @@ The channel reads the Message Board through Nintendo's CDB library, the same one
 
 Tested in Dolphin with a photo post that exists only on the SD card: it was found and its thumbnail was shown, also when the view was opened again. Without a card, NAND photos showed as before. The SD post was made by a script in the format CDB reads, not by the Wii Menu itself.
 
+## Wii app
+
+`wii/` is a Homebrew Channel app that does the same on the console: it finds WiiLink's channels on the NAND (and on the SD card as `content.bin`, except the Forecast, News and Photo Channels), lets you tick the features you want, backs up the clean copy to the SD card, patches content 1 and packs it again with WiiLink's LZ type. It can put the clean copy back. It only patches WiiLink's own builds, recognised by their SHA-1. See [wii/README.md](wii/README.md).
+
+`python3 build.py export wii/data/patches.bin <WADs...>` writes the patch list it carries.
+
 ## Controls
 
 | Wii Remote | Classic Controller | GameCube (port 1) |

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<app version="1">
+  <name>WiiLink Unshackled</name>
+  <coder>quatric</coder>
+  <version>1.0</version>
+  <short_description>Controller support and more for WiiLink's channels</short_description>
+  <long_description>Patches WiiLink's channels where they are installed (NAND, or the SD card as content.bin) with the features you pick: Classic Controller and GameCube controller support, the US clock, a USB keyboard in the Everybody Votes Channel, Message Board photos from the SD card in the Photo Channel and more. Each channel's clean copy is backed up to sd:/wiilink-unshackled/backup first and can be put back at any time.</long_description>
+  <ahb_access/>
+</app>

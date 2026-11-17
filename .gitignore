@@ -7,3 +7,5 @@ __pycache__/
 .codesight/
 *.jpg
 out/
+wii/build/
+wii/apps/
