@@ -2,8 +2,8 @@
 """Classic Controller + GameCube controller patch for WiiLink's channels and the Photo Channel
 (Everybody Votes Channel: also USB keyboard and no daily suggestion limit).
 
-  build.py dol <00000001.app in> <00000001.app out> [--clock] [--debug-feed]
-  build.py wad <channel .wad> <out.wad> [--clock] [--accuweather] [--debug-feed]
+  build.py dol <00000001.app in> <00000001.app out> [--clock] [--debug-feed] [--debug-menu]
+  build.py wad <channel .wad> <out.wad> [--clock] [--accuweather] [--debug-feed] [--debug-menu]
 
 The channel is recognised from its main DOL.  Builds the hooks in src/ with
 devkitPPC, links them at the start of the OS arena (right above the main
@@ -11,7 +11,8 @@ stack), moves the arena start up past them, adds them to the main DOL as a new
 section (last slot) and plants a branch at each hook site.  --clock (Forecast
 and News Channels) also applies forecast_us_clock_patch.py / news_us_clock_patch.py.  --accuweather
 (Forecast Channel, wad mode) swaps the WeatherNews logo on the channel's banner
-and Wii Menu icon for AccuWeather's (banner.py).
+and Wii Menu icon for AccuWeather's (banner.py).  --debug-menu (Check Mii Out
+Channel) lets 1+2 open the developers' debug overlay.
 `wad` unpacks with Sharpii, patches content 1 (decompressing it if WiiLink LZ-packed it), repacks and fakesigns.
 
 Mapping (Wii Remote <- Classic Controller / GameCube):
@@ -138,6 +139,29 @@ CHANNELS = {
         'sites': {'POLL': 0x800F112C, 'SAMPLE': 0x800F1244, 'PROBE': 0x800F66E8,
                   'BUTTONS': 0x800F16F4, 'MOTION': 0x800F1828},
         'clock': None,
+        # --debug-menu: the developers' debug overlay is still built and updated every
+        # frame, but its "open?" test (0x80287750) was stubbed to return 0.  Replace the
+        # call to it with: open the overlay when 1 and 2 are both held and one of them
+        # was just pressed.
+        'debug_patches': [
+            (0x80287794,
+             [0x7F83E378, 0x4BFFFFB9, 0x2C030000, 0x41820028, 0x38000000, 0x901C2394, 0x387C2398,
+              0x38800001, 0x48000651, 0x387C23AC, 0x38800000, 0x48000615, 0x480001E4],
+             [0x4BD85A7D,   # bl   0x8000D210        pad manager
+              0x38800000,   # li   r4,0
+              0x4BFDE131,   # bl   0x802658CC        Wii Remote 1's buttons
+              0x80030014,   # lwz  r0,20(r3)         held
+              0x80830018,   # lwz  r4,24(r3)         just pressed
+              0x70840300,   # andi. r4,r4,1|2
+              0x4182001C,   # beq  0x802877C8
+              0x70000300,   # andi. r0,r0,1|2
+              0x2C000300,   # cmpwi r0,1|2
+              0x40820010,   # bne  0x802877C8
+              0x387C2398,   # addi r3,r28,9112       the overlay's "open" flag
+              0x38800001,   # li   r4,1
+              0x48000641],  # bl   0x80287E04        set it
+             'debug menu: 1+2 opens the debug overlay'),
+        ],
     },
     # 2009 SDK: KPAD was rewritten (see src/hooks.S); WPAD/SI/OS are the same code
     'nintendo': {
@@ -599,8 +623,10 @@ class Dol:
         return slot
 
 
-def patch_dol(data, clock=False, debug_feed=False):
+def patch_dol(data, clock=False, debug_feed=False, debug_menu=False):
     key, ch = detect(data)
+    if debug_menu and not ch.get('debug_patches'):
+        raise SystemExit('--debug-menu is only for the Check Mii Out Channel')
     print('main DOL:', ch['title'])
     base, end, state, arena = layout(ch)
     dol = Dol(data)
@@ -631,7 +657,7 @@ def patch_dol(data, clock=False, debug_feed=False):
             raise SystemExit('arena site 0x%08X: no matching lis at 0x%08X (0x%08X)' % (addr, lis_a, lis))
         dol.put(lis_a, (lis & 0xFFFF0000) | new_hi)
         dol.put(addr, (cur & 0xFFFF0000) | new_lo)
-    for addr, old, new, what in ch.get('patches', []):
+    for addr, old, new, what in ch.get('patches', []) + (ch['debug_patches'] if debug_menu else []):
         for j, (o, n) in enumerate(zip(old, new)):
             cur = dol.word(addr + 4 * j)
             if cur != o:
@@ -681,13 +707,14 @@ def main():
     clock = '--clock' in sys.argv
     feed = '--debug-feed' in sys.argv
     accu = '--accuweather' in sys.argv
+    dbg = '--debug-menu' in sys.argv
     if len(a) != 3 or a[0] not in ('dol', 'wad'):
         raise SystemExit(__doc__)
     mode, src, dst = a
     if mode == 'dol':
         if accu:
             raise SystemExit('--accuweather needs wad mode (the banner is content 0)')
-        patched = patch_dol(main_dol(open(src, 'rb').read()), clock, feed)
+        patched = patch_dol(main_dol(open(src, 'rb').read()), clock, feed, dbg)
         open(dst, 'wb').write(patched)
         return
     tmp = tempfile.mkdtemp(prefix='fcwad')
@@ -696,7 +723,7 @@ def main():
     main = main_dol(open(app, 'rb').read())
     if accu and detect(main)[0] != 'forecast':
         raise SystemExit('--accuweather is only for the Forecast Channel')
-    patched = patch_dol(main, clock, feed)
+    patched = patch_dol(main, clock, feed, dbg)
     open(app, 'wb').write(patched)
     if accu:
         sys.path.insert(0, HERE)

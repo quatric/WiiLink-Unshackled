@@ -65,6 +65,19 @@ The Everybody Votes Channel build also gets two more patches:
 
 The channel's text-input library is an early build of the SDK's SoftwareKeyboard, from before it supported hardware keyboards. `src/kbd.c` reads IOS's `/dev/usb/kbd` itself, once per frame while the on-screen keyboard is up. It sends key presses to the input form as the same commands the on-screen keys send. The device needs an IOS that has the USB keyboard module; if `/dev/usb/kbd` can't be opened, the patch does nothing.
 
+## Check Mii Out Channel: debug menu (`--debug-menu`)
+
+The Check Mii Out Channel still contains its developers' debug overlay. The overlay is built and updated every frame, but the test that decides whether to open it was stubbed to always say no. `--debug-menu` replaces that test: hold **1 and 2** together (X and Y on a Classic Controller or GameCube controller) and the overlay appears over the left side of the screen.
+
+* **Up/Down** moves the `>` cursor, **A** turns the selected entry on or off (`+` marks entries that are on), and **B** closes the overlay.
+* The channel still sees these button presses too, so close the overlay before using the channel normally.
+* Entries include Console, Debug Save Data Access, Rare Message Check, Safety Frame, Save Data Clear, All Your Base, Debug Print, Debug See Result, Debug Contest Off Limit, the Settings/Startup/Request/Response/Cache Dumps, Cache Clear, No Cache, NWC24 Tmp Error Occur and Disp Mii Info.
+* **All Your Base** makes the channel treat every Mii as if it had been made on this Wii. It overrides the channel's check of a Mii's creator ID, so the Mii doesn't have to come from this console.
+
+```bash
+python3 build.py wad "Check Mii Out Channel (USA) (WiiLink).wad" "Check Mii Out Channel (USA) (WiiLink) [CC & GC + debug menu].wad" --debug-menu
+```
+
 ## Controls
 
 | Wii Remote | Classic Controller | GameCube (port 1) |
