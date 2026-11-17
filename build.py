@@ -139,6 +139,13 @@ CHANNELS = {
         'sites': {'POLL': 0x800F112C, 'SAMPLE': 0x800F1244, 'PROBE': 0x800F66E8,
                   'BUTTONS': 0x800F16F4, 'MOTION': 0x800F1828},
         'clock': None,
+        # The channel sorts each Mii into 0/1 (made on this Wii), 2 (made on another Wii)
+        # or 3 (special, "gold pants").  Only 0/1 can be the Mii Artisan or be posted.
+        # Send special Miis on to the 0/1 test instead of returning 3.
+        'patches': [
+            (0x80273450, [0x38600003], [0x48000020],
+             'gold pants Miis: special Miis count as made on this Wii'),
+        ],
         # --debug-menu: the developers' debug overlay is still built and updated every
         # frame, but its "open?" test (0x80287750) was stubbed to return 0.  Replace the
         # call to it with: open the overlay when 1 and 2 are both held and one of them
