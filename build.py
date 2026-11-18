@@ -2,8 +2,8 @@
 """Classic Controller + GameCube controller patch for WiiLink's channels and the Photo Channel
 (Everybody Votes Channel: also USB keyboard and no daily suggestion limit).
 
-  build.py dol <00000001.app in> <00000001.app out> [--clock] [--wiilink] [--debug-feed] [--debug-menu]
-  build.py wad <channel .wad> <out.wad> [--clock] [--wiilink] [--accuweather] [--newslogos]
+  build.py dol <00000001.app in> <00000001.app out> [--clock] [--wiilink] [--japan] [--debug-feed] [--debug-menu]
+  build.py wad <channel .wad> <out.wad> [--clock] [--wiilink] [--japan] [--accuweather] [--newslogos]
                                        [--articlemusic] [--debug-feed] [--debug-menu]
   build.py export <patches.bin> <channel .wad>...    (for the Wii app, wii/)
 
@@ -14,7 +14,8 @@ section (last slot) and plants a branch at each hook site.  --clock (Forecast
 and News Channels) also applies forecast_us_clock_patch.py / news_us_clock_patch.py.  --accuweather
 (Forecast Channel, wad mode) swaps the WeatherNews logo on the channel's banner
 and Wii Menu icon for AccuWeather's (banner.py).  --debug-menu (Check Mii Out
-Channel) lets 1+2 open the developers' debug overlay.
+Channel) lets 1+2 open the developers' debug overlay.  --japan (Forecast) makes
+the channel the Japanese one on any console.
 --wiilink (every channel) says WiiLink for WiiConnect24 where it means the
 service, in the DOL's messages and, in wad mode, the manual, layouts and banner
 (res.py).  In wad mode --accuweather also changes the in-channel credit line and
@@ -83,6 +84,19 @@ CHANNELS = {
         # bl the camera's set-posture -> globe_posture (hooks.S): up without the camera
         # position in it, as the News Channel has it, or the picture snaps round below level
         'call_hooks': [(0x8002BB5C, 0x800AD67C, 'globe_posture', 'FN_SETPOSTURE')],
+        # One main DOL serves every region; it picks its mode at start-up from the
+        # console (0x8002F748): SCGetProductArea through the table at 0x8019B760 (Japan
+        # and Taiwan 0, Europe, Australia and Latin America 2, the rest 1) into r13-27140,
+        # SCGetCountry (or the mode's default, Japan's 1, when it has none) into
+        # r13-27144, and the language into r13-27146 (written back to the console's
+        # settings when they differ).  --japan makes it the Japanese channel: mode 0,
+        # country 1, Japanese, without changing the console's language setting.
+        'feature_patches': [
+            ('japan', 0x8002C0D8, [0x480EB9D5], [0x38600000], 'product area: Japan (li r3,0)'),
+            ('japan', 0x8002F790, [0x480E8025], [0x3860FFFF], 'country: none, so Japan (li r3,-1)'),
+            ('japan', 0x8002F720, [0x4BFFCA05], [0x38600000], 'language: Japanese (li r3,0)'),
+            ('japan', 0x8002F738, [0x41820010], [0x48000010], "don't write the language to the console's settings"),
+        ],
     },
     'news': {
         'title': 'News Channel (USA, HAGE)',
@@ -966,9 +980,10 @@ FEATURE_INFO = {        # id: (name, on by default, needs the hook section)
     'cdbsd': ('Message Board photos from the SD card', True, True),
     'clock': ('Clock on US consoles (12-hour)', True, False),
     'debugmenu': ('Debug menu (hold 1+2)', False, False),
+    'japan': ('Japanese Forecast Channel (Japan, in Japanese)', False, False),
     'wiilink': ('"WiiLink" for "WiiConnect24" in messages', False, False),
 }
-OPTIONAL = ('clock', 'debugmenu', 'wiilink')   # build.py applies these only when asked
+OPTIONAL = ('clock', 'debugmenu', 'wiilink', 'japan')   # build.py applies these only when asked
 
 
 class Plan:
@@ -1097,6 +1112,8 @@ def patch_dol(data, clock=False, debug_feed=False, debug_menu=False, extra=()):
     if debug_menu:
         feats.append('debugmenu')
     for f in extra:
+        if f == 'japan' and 'japan' not in p.groups:
+            raise SystemExit('--japan is only for the Forecast Channel')
         if f in p.groups:
             feats.append(f)
     for f in feats:
@@ -1220,7 +1237,7 @@ def main():
     wl = '--wiilink' in sys.argv
     ap = '--newslogos' in sys.argv or '--aplogo' in sys.argv     # --aplogo: the old name
     am = '--articlemusic' in sys.argv
-    extra = ['wiilink'] if wl else []
+    extra = [f for f, on in (('wiilink', wl), ('japan', '--japan' in sys.argv)) if on]
     if len(a) != 3 or a[0] not in ('dol', 'wad'):
         raise SystemExit(__doc__)
     mode, src, dst = a

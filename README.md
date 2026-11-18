@@ -29,8 +29,8 @@ Adds Classic Controller and GameCube controller support to WiiLink's channels, t
 Sizes are for the uncompressed DOL. Most of these WADs store content 1 LZ-compressed; `build.py` unpacks it and writes the patched DOL back uncompressed (the boot program loads either).
 
 ```
-python3 build.py wad "<channel> (WiiLink).wad" out.wad [--clock] [--wiilink] [--accuweather] [--newslogos] [--articlemusic]
-python3 build.py dol 00000001.app out.app [--clock] [--wiilink]
+python3 build.py wad "<channel> (WiiLink).wad" out.wad [--clock] [--wiilink] [--japan] [--accuweather] [--newslogos] [--articlemusic]
+python3 build.py dol 00000001.app out.app [--clock] [--wiilink] [--japan]
 ```
 
 The Photo Channel isn't a WiiLink channel: use the Photo Channel 1.1 system title WAD (`Photo Channel v1.1 (World) (v3) (Channel).wad`). The channel is recognised from its main DOL. `--clock` (Forecast and News Channels) also applies `forecast_us_clock_patch.py` or `news_us_clock_patch.py`. Those enable the clock on US consoles with a 12-hour a.m./p.m. display.
@@ -57,6 +57,16 @@ The Forecast Channel build also gets:
 * **Rolls over smoothly:** the Forecast Channel builds the camera's "up" from a matrix that still holds the camera's position, so the view keeps the globe's centre at the top and, tilted past level, snapped half round. The News Channel clears that position first. A hook on the camera's posture call (`globe_posture`, `call_hooks` in `build.py`) takes it back off, so the globe rolls over continuously, as in the News Channel.
 
 The tilt code is the same in both channels, apart from the angle table and its bounds. The new angle and sound tables live in the hook section, and `build.py` points the channel's table loads at them (`sympatches`).
+
+## Forecast Channel: Japanese version (`--japan`)
+
+The Forecast Channel has one main DOL for every region. At start-up it reads the console's product area (`SCGetProductArea`): Japan and Taiwan get the Japanese channel, Europe, Australia and Latin America the European one, the rest the American one. It also reads the console's country (when the console has none it falls back to the mode's own: Japan for the Japanese channel) and its language, and writes the language back to the console's settings if the channel had to change it.
+
+`--japan` turns a US or European Forecast Channel into the Japanese one: the area reads as Japan, the country as none (so Japan), and the language as Japanese. The write-back is skipped, so the console's own language setting is left alone. It changes four words (0x8002C0D8, 0x8002F790, 0x8002F720, 0x8002F738).
+
+The channel then downloads WiiLink's Japanese forecasts and shows the Japanese channel: Japanese text, Japan's prefectures and cities, °C, rain chances in 6-hour blocks, くらしの天気 (the everyday weather page) and its own clock. The first start asks for a location again (一部の都市が変更になりました), since the saved one is not a Japanese city; switching back asks again the other way. The banner and manual (contents 0 and 0x0A) stay the WAD's own.
+
+Tested in Dolphin on a US console: the channel came up in Japanese, took 岩手県 宮古市 as the location and showed its forecast.
 
 ## Forecast Channel: AccuWeather (`--accuweather`)
 
