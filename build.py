@@ -2,8 +2,8 @@
 """Classic Controller + GameCube controller patch for WiiLink's channels and the Photo Channel
 (Everybody Votes Channel: also USB keyboard and no daily suggestion limit).
 
-  build.py dol <00000001.app in> <00000001.app out> [--clock] [--calm] [--wiilink] [--debug-feed] [--debug-menu]
-  build.py wad <channel .wad> <out.wad> [--clock] [--calm] [--wiilink] [--accuweather] [--newslogos]
+  build.py dol <00000001.app in> <00000001.app out> [--clock] [--wiilink] [--debug-feed] [--debug-menu]
+  build.py wad <channel .wad> <out.wad> [--clock] [--wiilink] [--accuweather] [--newslogos]
                                        [--articlemusic] [--debug-feed] [--debug-menu]
   build.py export <patches.bin> <channel .wad>...    (for the Wii app, wii/)
 
@@ -14,8 +14,7 @@ section (last slot) and plants a branch at each hook site.  --clock (Forecast
 and News Channels) also applies forecast_us_clock_patch.py / news_us_clock_patch.py.  --accuweather
 (Forecast Channel, wad mode) swaps the WeatherNews logo on the channel's banner
 and Wii Menu icon for AccuWeather's (banner.py).  --debug-menu (Check Mii Out
-Channel) lets 1+2 open the developers' debug overlay.  --calm (Forecast) shows
-wind with no direction as "Calm" on US consoles, as elsewhere, not "None".
+Channel) lets 1+2 open the developers' debug overlay.
 --wiilink (every channel) says WiiLink for WiiConnect24 where it means the
 service, in the DOL's messages and, in wad mode, the manual, layouts and banner
 (res.py).  In wad mode --accuweather also changes the in-channel credit line and
@@ -84,19 +83,6 @@ CHANNELS = {
         # bl the camera's set-posture -> globe_posture (hooks.S): turn the camera's up
         # round below level, or the globe's picture turns half round there
         'call_hooks': [(0x8002BB5C, 0x800AD67C, 'globe_posture', 'FN_SETPOSTURE')],
-        # Wind direction code 0 means no wind.  The wind line (0x8001F110: direction r4,
-        # speed r5) prints it as a word only when the console's area is not a "USA" one
-        # (SCGetProductArea: USA, Brazil, Korea, ... set 0x8033CEFC (r13-27140) to 1):
-        # elsewhere it reads "Calm" / "Windstill" / "Pas de vent" ..., in the USA just the
-        # speed ("3 mph").  The words come from [language][direction] tables, 0x801994D8
-        # for USA consoles and 0x80199748 for the rest, which differ only in English:
-        # "None" and "Calm".  --calm takes the other areas' branch for direction 0 and
-        # points the USA table's English entry at "Calm" (also used by the city labels,
-        # 0x8001E10C, which showed "None").
-        'feature_patches': [
-            ('calm', 0x8001F148, [0x419A0180], [0x419A0250], 'wind direction 0: the word ("Calm"), not just the speed'),
-            ('calm', 0x8019951C, [0x80199448], [0x801996B8], 'wind direction 0 in English: "Calm", not "None"'),
-        ],
     },
     'news': {
         'title': 'News Channel (USA, HAGE)',
@@ -980,10 +966,9 @@ FEATURE_INFO = {        # id: (name, on by default, needs the hook section)
     'cdbsd': ('Message Board photos from the SD card', True, True),
     'clock': ('Clock on US consoles (12-hour)', True, False),
     'debugmenu': ('Debug menu (hold 1+2)', False, False),
-    'calm': ('Calm wind reads "Calm" (not "None")', False, False),
     'wiilink': ('"WiiLink" for "WiiConnect24" in messages', False, False),
 }
-OPTIONAL = ('clock', 'debugmenu', 'calm', 'wiilink')   # build.py applies these only when asked
+OPTIONAL = ('clock', 'debugmenu', 'wiilink')   # build.py applies these only when asked
 
 
 class Plan:
@@ -1112,8 +1097,6 @@ def patch_dol(data, clock=False, debug_feed=False, debug_menu=False, extra=()):
     if debug_menu:
         feats.append('debugmenu')
     for f in extra:
-        if f == 'calm' and 'calm' not in p.groups:
-            raise SystemExit('--calm is only for the Forecast Channel')
         if f in p.groups:
             feats.append(f)
     for f in feats:
@@ -1237,7 +1220,7 @@ def main():
     wl = '--wiilink' in sys.argv
     ap = '--newslogos' in sys.argv or '--aplogo' in sys.argv     # --aplogo: the old name
     am = '--articlemusic' in sys.argv
-    extra = [f for f, on in (('calm', '--calm' in sys.argv), ('wiilink', wl)) if on]
+    extra = ['wiilink'] if wl else []
     if len(a) != 3 or a[0] not in ('dol', 'wad'):
         raise SystemExit(__doc__)
     mode, src, dst = a

@@ -29,8 +29,8 @@ Adds Classic Controller and GameCube controller support to WiiLink's channels, t
 Sizes are for the uncompressed DOL. Most of these WADs store content 1 LZ-compressed; `build.py` unpacks it and writes the patched DOL back uncompressed (the boot program loads either).
 
 ```
-python3 build.py wad "<channel> (WiiLink).wad" out.wad [--clock] [--calm] [--wiilink] [--accuweather] [--newslogos] [--articlemusic]
-python3 build.py dol 00000001.app out.app [--clock] [--calm] [--wiilink]
+python3 build.py wad "<channel> (WiiLink).wad" out.wad [--clock] [--wiilink] [--accuweather] [--newslogos] [--articlemusic]
+python3 build.py dol 00000001.app out.app [--clock] [--wiilink]
 ```
 
 The Photo Channel isn't a WiiLink channel: use the Photo Channel 1.1 system title WAD (`Photo Channel v1.1 (World) (v3) (Channel).wad`). The channel is recognised from its main DOL. `--clock` (Forecast and News Channels) also applies `forecast_us_clock_patch.py` or `news_us_clock_patch.py`. Those enable the clock on US consoles with a 12-hour a.m./p.m. display.
@@ -57,14 +57,6 @@ The Forecast Channel build also gets:
 * **Upside down, not mirrored:** the Forecast Channel's camera keeps its "up" pointing to the top of the globe, so tilted past level the view flipped round and the globe came out mirrored left to right. A hook on the camera's posture call (`globe_posture`, `call_hooks` in `build.py`) turns "up" over when the tilt is below level, as the News Channel does.
 
 The tilt code is the same in both channels, apart from the angle table and its bounds. The new angle and sound tables live in the hook section, and `build.py` points the channel's table loads at them (`sympatches`).
-
-## Forecast Channel: calm wind (`--calm`)
-
-The forecast data gives each wind a direction code, and code 0 means no wind. The channel prints that as a word ("Calm", "Windstill", "Pas de vent", "Viento en calma", "Assenza di vento", "Windstil", in the system language) only when the console's area is not a "USA" one. `SCGetProductArea` sorts the areas: USA, Brazil, Korea, Taiwan-ROC and Asia count as USA; Japan, Europe, Australia and Latin America don't. On a US console the line shows just the speed ("3 mph"), and the city labels on the globe say "None".
-
-So "Calm" needs two things: WiiLink's data sending direction 0 for the city, and a console outside the USA area. `--calm` drops the second: direction 0 then reads "Calm" on US consoles as well, on the forecast screens and on the globe. It changes two words: the wind line's branch for direction 0 (0x8001F148) and the US table's English entry ("None" becomes "Calm").
-
-Tested in Dolphin with a test build that forced direction 0 for the current weather: an unpatched US console showed "3 mph", with `--calm` it showed "Calm".
 
 ## Forecast Channel: AccuWeather (`--accuweather`)
 

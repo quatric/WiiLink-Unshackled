@@ -27,7 +27,7 @@ GodModeWii. Every controller libwiiinput reads works: Wii Remote, Classic Contro
 
 | Channel | Features |
 |---|---|
-| Forecast Channel (USA, PAL, Japan) | Classic Controller and GameCube pads, clock on US consoles, globe tilts both ways, "Calm" for no wind (off by default) |
+| Forecast Channel (USA, PAL, Japan) | Classic Controller and GameCube pads, clock on US consoles, globe tilts both ways |
 | News Channel (USA, PAL, Japan) | pads, clock on US consoles |
 | Everybody Votes Channel (USA, PAL, Japan) | pads, USB keyboard, no daily suggestion limit |
 | Check Mii Out Channel (USA, Japan) / Mii Contest Channel (PAL) | pads, gold pants Miis, debug menu (hold 1+2; off by default; the three entries that freeze a console do nothing) |
