@@ -80,8 +80,8 @@ CHANNELS = {
                        # the tilt step's sound table (passed to the step, 0x80040B3C): the
                        # channel's has sounds for only six angles
                        (0x8001AA38, 0x8001AA40, 'tilt_sounds')],
-        # bl the camera's set-posture -> globe_posture (hooks.S): turn the camera's up
-        # round below level, or the globe's picture turns half round there
+        # bl the camera's set-posture -> globe_posture (hooks.S): up without the camera
+        # position in it, as the News Channel has it, or the picture snaps round below level
         'call_hooks': [(0x8002BB5C, 0x800AD67C, 'globe_posture', 'FN_SETPOSTURE')],
     },
     'news': {
