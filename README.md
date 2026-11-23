@@ -86,7 +86,7 @@ Jaxi's `Forecast Channel (Japanese Symbols, WiiLink) - HAFE.wad` has the Japanes
 python3 build.py wad "Forecast Channel (USA) (WiiLink).wad" out.wad --symbols="Forecast Channel (Japanese Symbols, WiiLink) - HAFE.wad" --accuweather
 ```
 
-`--symbols=<his WAD>` (USA Forecast, `wad` mode only: the Wii app cannot change the other contents) takes contents 0, 4 and 5 from his WAD and applies the DOL words (they are in `build.py`, checked against the original words, and an already patched DOL passes). The banner and icon then have his logo; add `--accuweather` for this repo's logo and "supported by WiiLink". Checked: WiiLink's WAD with `--symbols --accuweather` unpacks to the same contents as Jaxi's WAD with `--accuweather`. Not looked at in a running channel.
+`--symbols=<Jaxi's WAD>` (USA Forecast, `wad` mode only: the Wii app cannot change the other contents) takes contents 0, 4 and 5 from Jaxi's WAD and applies the DOL words (they are in `build.py`, checked against the original words, and an already patched DOL passes). The banner and icon then have Jaxi's logo; add `--accuweather` for this repo's logo and "supported by WiiLink". Checked: WiiLink's WAD with `--symbols --accuweather` unpacks to the same contents as Jaxi's WAD with `--accuweather`. Not looked at in a running channel.
 
 ### The logo
 

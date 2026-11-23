@@ -1288,7 +1288,7 @@ def main():
     open(app, 'wb').write(patched)
     sys.path.insert(0, HERE)
     if sym:
-        # contents 0 (banner and icon), 4 and 5 of Jaxi's HAFE WAD (not in the repo: it is Nintendo's and his
+        # contents 0 (banner and icon), 4 and 5 of Jaxi's HAFE WAD (not in the repo: it is Nintendo's and Jaxi's
         # work); --accuweather then redoes the logo and credit on top
         run([SHARPII, 'WAD', '-u', sym, tmp + '/j'])
         for d in ('u', 'j'):
