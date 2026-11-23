@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Make the "AccuWeather" half of the Forecast Channel's in-channel credit line.
+"""Make the "WiiLink" half of the Forecast Channel's in-channel credit line.
 
   mkcredit.py <Verdana Bold .ttf> <out dir>
 
@@ -59,6 +59,6 @@ def styles(g):
 if __name__ == '__main__':
     if len(sys.argv) != 3:
         raise SystemExit(__doc__)
-    a, b = styles(coverage(sys.argv[1], 'AccuWeather'))
+    a, b = styles(coverage(sys.argv[1], 'WiiLink'))
     open(os.path.join(sys.argv[2], 'credit.ia4'), 'wb').write(a)
     open(os.path.join(sys.argv[2], 'credit_outline.ia4'), 'wb').write(b)

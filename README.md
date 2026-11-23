@@ -29,7 +29,7 @@ Adds Classic Controller and GameCube controller support to WiiLink's channels, t
 Sizes are for the uncompressed DOL. Most of these WADs store content 1 LZ-compressed; `build.py` unpacks it and writes the patched DOL back uncompressed (the boot program loads either).
 
 ```
-python3 build.py wad "<channel> (WiiLink).wad" out.wad [--clock] [--wiilink] [--japan] [--accuweather] [--newslogos] [--articlemusic]
+python3 build.py wad "<channel> (WiiLink).wad" out.wad [--clock] [--wiilink] [--japan] [--symbols=<Jaxi's HAFE WAD>] [--accuweather] [--newslogos] [--articlemusic]
 python3 build.py dol 00000001.app out.app [--clock] [--wiilink] [--japan]
 ```
 
@@ -68,22 +68,30 @@ The channel then downloads WiiLink's Japanese forecasts and shows the Japanese c
 
 Tested in Dolphin on a US console: the channel came up in Japanese, took 岩手県 宮古市 as the location and showed its forecast.
 
-## Forecast Channel: AccuWeather (`--accuweather`)
+## Forecast Channel: AccuWeather logo, "supported by WiiLink" (`--accuweather`)
 
-`--accuweather` (Forecast Channel, `wad` mode) replaces WeatherNews with AccuWeather in three places:
+`--accuweather` (Forecast Channel, `wad` mode) is one option: AccuWeather's logo, and WiiLink as the one the channel says it is supported by. It changes four places:
 
-* **The Wii Menu banner and icon:** the logo (below). `banner.py` does the work on content 0 (`opening.bnr`), and can also be run on its own: `python3 banner.py 00000000.app out.app`.
-* **In the channel:** the "supported by weathernews" credit line under the forecast (`TPLWeather.tpl`, images 22 to 25: plain and outlined, and the Japanese "ウェザーニュース" versions) reads "supported by AccuWeather". The channel's own "supported by " is kept; the new name is drawn to match its lettering (`tools/mkcredit.py`, Verdana Bold fitted to the original pixel by pixel, in `assets/accuweather/credit*.ia4`).
-* **The banner** (Wii Menu) of the Japanese build says "supported by ウェザーニュース": it becomes "supported by AccuWeather" too (the text pane grows to fit).
-* **The manual:** the "supported by weathernews" captions (English, French, Spanish) and the Source page: "provided by AccuWeather, Inc." and https://www.accuweather.com. The screenshots in the manual still show the old credit; it is too small to read in them.
+* **The Wii Menu banner and icon:** the WeatherNews logo becomes AccuWeather's (below). `banner.py` does the work on content 0 (`opening.bnr`), and can also be run on its own: `python3 banner.py 00000000.app out.app`. The banner's "supported by weathernews" line (the Japanese "ウェザーニュース" one, and "powered by WiiLink" in Jaxi's WAD) reads "supported by WiiLink".
+* **In the channel:** the "supported by weathernews" credit line under the forecast (`TPLWeather.tpl`, images 22 to 25: plain and outlined, and the Japanese "ウェザーニュース" versions) reads "supported by WiiLink". The channel's own "supported by " is kept; "WiiLink" is drawn to match its lettering (`tools/mkcredit.py`, Verdana Bold fitted to the original pixel by pixel, in `assets/credit/*.ia4`). `res.py` repacks the TPL (LZ-compressed in the archive) and the archive.
+* **The manual:** the "supported by weathernews" captions (English, French, Spanish) say WiiLink too; the Source page says "provided by AccuWeather, Inc." and https://www.accuweather.com, since that is where the forecasts come from. The screenshots in the manual still show the old credit; it is too small to read in them.
 
-`res.py` makes the channel and manual changes. There is no "weathernews" in the channel's `banner.rso` (checked as stored, LZ-unpacked and as UTF-16), and `TPLCommon.tpl` has only NASA's image credits.
+`res.py` makes the channel and manual changes. There is no "weathernews" in the channel's `banner.rso` (checked as stored, LZ-unpacked and as UTF-16), and `TPLCommon.tpl` has only NASA's image credits. It works on WiiLink's WAD and on Jaxi's.
+
+## Forecast Channel: Japanese weather symbols (`--symbols=<WAD>`)
+
+Jaxi's `Forecast Channel (Japanese Symbols, WiiLink) - HAFE.wad` has the Japanese-style weather symbols (and, on its banner, AccuWeather's logo with "powered by WiiLink"). Compared with WiiLink's USA WAD it differs in contents 0 (the banner and icon: the symbol pictures, their layouts and the logo), 4 (`icon.cs`) and 5 (`banner.rso`) and in 53 words of the main DOL (the symbol table, the layout numbers next to it, a jump table and one call). The WAD is Nintendo's and Jaxi's work, so it is not in this repo:
+
+```
+python3 build.py wad "Forecast Channel (USA) (WiiLink).wad" out.wad --symbols="Forecast Channel (Japanese Symbols, WiiLink) - HAFE.wad" --accuweather
+```
+
+`--symbols=<his WAD>` (USA Forecast, `wad` mode only: the Wii app cannot change the other contents) takes contents 0, 4 and 5 from his WAD and applies the DOL words (they are in `build.py`, checked against the original words, and an already patched DOL passes). The banner and icon then have his logo; add `--accuweather` for this repo's logo and "supported by WiiLink". Checked: WiiLink's WAD with `--symbols --accuweather` unpacks to the same contents as Jaxi's WAD with `--accuweather`. Not looked at in a running channel.
 
 ### The logo
 
 * The logo has its real colours: a Hero Orange (#F05514) sun and a black wordmark, per [AccuWeather's brand guidelines](https://developer.accuweather.com/documentation/brand-guidelines).
 * It is resized to the logo's 7:1 proportions and has half a sun height of clear space on the white plate.
-* The banner's "supported by weathernews" line becomes "supported by AccuWeather".
 
 The textures in `assets/accuweather/` are AccuWeather's official horizontal logo (`AW_RGB_R.svg`), rendered with `resvg -w 140 -h 20` (banner) and `-w 112 -h 16` (icon), then converted with `tools/mktpl.py`. Like the WeatherNews logo they replace, they are IA4 textures tinted by their material. The material maps intensity 0 to black and intensity 1 to Hero Orange, so a single small texture carries both colours. AccuWeather's logo and name are AccuWeather's trademarks.
 

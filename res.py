@@ -5,7 +5,7 @@ manuals, layouts and message files, and a few pictures.
   res.py <unpacked WAD folder> <feature>...      (build.py wad calls apply())
 
 Features:
-  accuweather  Forecast Channel: "supported by weathernews" -> "supported by AccuWeather"
+  accuweather  Forecast Channel: "supported by weathernews" -> "supported by WiiLink"
                in the channel (TPLWeather.tpl credit lines) and in its manual, and the
                manual's Weathernews Inc. source note -> AccuWeather.  (The Wii Menu
                banner and icon are banner.py.)
@@ -255,9 +255,9 @@ SAME_LENGTH = [
 ]
 
 ACCU = [
-    ('supported by weathernews', 'supported by AccuWeather'),
-    ('apoyado por weathernews', 'apoyado por AccuWeather'),
-    ('soutien de weathernews', 'soutien de AccuWeather'),
+    ('supported by weathernews', 'supported by WiiLink'),
+    ('apoyado por weathernews', 'apoyado por WiiLink'),
+    ('soutien de weathernews', 'soutien de WiiLink'),
     ('provided by Weathernews Inc.', 'provided by AccuWeather, Inc.'),
     ('Weathernews Inc. facilita', 'AccuWeather, Inc. facilita'),
     ('fournies par Weathernews Inc.', 'fournies par AccuWeather, Inc.'),
@@ -420,14 +420,14 @@ def edit_text(path, d, rule):
 def accu_credit_tpl(d):
     """TPLWeather.tpl: images 22-25 are the 'supported by' lines (ウェザーニュース and
     weathernews, each plain and outlined), IA4 214x19.  Columns 100-213 (the
-    company's name) come from assets/accuweather/credit*.ia4 (tools/mkcredit.py);
+    company's name) come from assets/credit/credit*.ia4 (tools/mkcredit.py);
     the channel's own "supported by " stays."""
     d = bytearray(d)
     n, to = struct.unpack('>II', d[4:12])
     for idx, f in ((22, 'credit.ia4'), (23, 'credit_outline.ia4'), (24, 'credit.ia4'), (25, 'credit_outline.ia4')):
         ih, _ = struct.unpack('>II', d[to + 8 * idx:to + 8 * idx + 8])
         h, w, fmt, off = struct.unpack('>HHII', d[ih:ih + 12])
-        new = open(os.path.join(ASSETS, 'accuweather', f), 'rb').read()
+        new = open(os.path.join(ASSETS, 'credit', f), 'rb').read()
         if (w, h, fmt) != (214, 19, 2) or len(new) != 114 * 19:
             raise SystemExit('TPLWeather.tpl: image %d is %dx%d format %d, not the credit line' % (idx, w, h, fmt))
         tiles_x = (w + 7) // 8

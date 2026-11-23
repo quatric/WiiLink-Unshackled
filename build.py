@@ -3,7 +3,7 @@
 (Everybody Votes Channel: also USB keyboard and no daily suggestion limit).
 
   build.py dol <00000001.app in> <00000001.app out> [--clock] [--wiilink] [--japan] [--debug-feed] [--debug-menu]
-  build.py wad <channel .wad> <out.wad> [--clock] [--wiilink] [--japan] [--accuweather] [--newslogos]
+  build.py wad <channel .wad> <out.wad> [--clock] [--wiilink] [--japan] [--symbols=<Jaxi's WAD>] [--accuweather] [--newslogos]
                                        [--articlemusic] [--debug-feed] [--debug-menu]
   build.py export <patches.bin> <channel .wad>...    (for the Wii app, wii/)
 
@@ -13,7 +13,9 @@ stack), moves the arena start up past them, adds them to the main DOL as a new
 section (last slot) and plants a branch at each hook site.  --clock (Forecast
 and News Channels) also applies forecast_us_clock_patch.py / news_us_clock_patch.py.  --accuweather
 (Forecast Channel, wad mode) swaps the WeatherNews logo on the channel's banner
-and Wii Menu icon for AccuWeather's (banner.py).  --debug-menu (Check Mii Out
+and Wii Menu icon for AccuWeather's (banner.py) and makes every "supported by
+weathernews" say "supported by WiiLink".  --symbols (USA Forecast, wad mode) puts in the
+Japanese weather symbols of Jaxi's HAFE WAD, which you give it: --symbols=<that WAD>.  --debug-menu (Check Mii Out
 Channel) lets 1+2 open the developers' debug overlay.  --japan (Forecast) makes
 the channel the Japanese one on any console.
 --wiilink (every channel) says WiiLink for WiiConnect24 where it means the
@@ -96,6 +98,26 @@ CHANNELS = {
             ('japan', 0x8002F790, [0x480E8025], [0x3860FFFF], 'country: none, so Japan (li r3,-1)'),
             ('japan', 0x8002F720, [0x4BFFCA05], [0x38600000], 'language: Japanese (li r3,0)'),
             ('japan', 0x8002F738, [0x41820010], [0x48000010], "don't write the language to the console's settings"),
+        # --symbols=<Jaxi's WAD> (wad mode: also takes contents 0, 4 and 5 from that WAD): the
+        # Japanese-style weather symbols of Jaxi's HAFE WAD, as the words it changes in the DOL
+            ('symbols', 0x80020908, [0xFC20F890],
+             [0xEC3FF82A], 'Japanese weather symbols'),
+            ('symbols', 0x80020914, [0x48000025],
+             [0x480001C1], 'Japanese weather symbols'),
+            ('symbols', 0x80179370, [0x0000000F, 0x0000000F, 0x0000000F, 0x0000000F, 0x0000000F, 0x0000000F],
+             [0x00000000, 0x00000001, 0x00000002, 0x00000003, 0x00000004, 0x00000005], 'Japanese weather symbols'),
+            ('symbols', 0x8017AB90, [0x0000000F, 0xC1700000, 0xC1B80000],
+             [0x00000004, 0xC2100000, 0xC1400000], 'Japanese weather symbols'),
+            ('symbols', 0x8017ABA4, [0x000000FF, 0x0000000C, 0xC2240000, 0x424A0000, 0x3F666666],
+             [0x202020FF, 0x00000002, 0x00000000, 0x41400000, 0x3F4CCCCD], 'Japanese weather symbols'),
+            ('symbols', 0x8017ABBC, [0x000000FF, 0x00000007, 0x00000000, 0xC0F00000, 0x3F800000],
+             [0x202020FF, 0x00000003, 0x42100000, 0x41400000, 0x3F4CCCCD], 'Japanese weather symbols'),
+            ('symbols', 0x8017ABD4, [0x000000FF, 0x0000000E, 0x42500000, 0x42420000, 0x3F666666, 0xFFFFFFFF, 0x000000FF],
+             [0x202020FF, 0xFFFFFFFF, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000], 'Japanese weather symbols'),
+            ('symbols', 0x8019B0DC, [0x8002076C, 0x80020778, 0x80020784, 0x80020790],
+             [0x800205E0, 0x800205EC, 0x800205F8, 0x80020604], 'Japanese weather symbols'),
+            ('symbols', 0x8019B0F0, [0x800207A8, 0x800207B4, 0x800207C0, 0x800207CC, 0x800207D8, 0x800207E4, 0x800207F0, 0x800207FC, 0x80020808, 0x80020814, 0x80020820, 0x8002082C, 0x80020838, 0x80020844, 0x80020850, 0x8002085C, 0x80020868, 0x80020874, 0x80020880, 0x8002088C, 0x80020898],
+             [0x8002064C, 0x80020658, 0x80020664, 0x80020670, 0x800206DC, 0x800206B8, 0x800205F8, 0x80020664, 0x800206DC, 0x800206DC, 0x8002070C, 0x80020604, 0x80020670, 0x80020748, 0x800206DC, 0x800206DC, 0x800205E0, 0x8002070C, 0x8002064C, 0x80020760, 0x80020670], 'Japanese weather symbols'),
         ],
     },
     'news': {
@@ -982,8 +1004,9 @@ FEATURE_INFO = {        # id: (name, on by default, needs the hook section)
     'debugmenu': ('Debug menu (hold 1+2)', False, False),
     'japan': ('Japanese Forecast Channel (Japan, in Japanese)', False, False),
     'wiilink': ('"WiiLink" for "WiiConnect24" in messages', False, False),
+    'symbols': ('Japanese weather symbols', False, False),
 }
-OPTIONAL = ('clock', 'debugmenu', 'wiilink', 'japan')   # build.py applies these only when asked
+OPTIONAL = ('clock', 'debugmenu', 'wiilink', 'japan', 'symbols')   # build.py applies these only when asked
 
 
 class Plan:
@@ -1031,7 +1054,7 @@ class Plan:
                 word('debugmenu', addr + 4 * j, o, n)
         for feat, addr, old, new, what in ch.get('feature_patches', []):
             for j, (o, n) in enumerate(zip(old, new)):
-                word(feat, addr + 4 * j, o, n)
+                word(feat, addr + 4 * j, o, n, allow_new=feat == 'symbols')   # Jaxi's WAD has them already
         # --wiilink: the same text edits as res.py, on the DOL's own UTF-16 messages
         sys.path.insert(0, HERE)
         import res
@@ -1178,7 +1201,7 @@ def export(out, wads):
         if 'clock' in p.groups and tid & 0xFF != ord('E'):
             raise SystemExit('%s: the clock patch is only for the US builds (EU/JP ones show the clock)' % w)
         for fid, fname, on, needs in p.features():
-            if fid == 'wiilink':          # the app can't change the other contents yet: only offer it with them
+            if fid in ('wiilink', 'symbols'):          # the app can't change the other contents yet: only offer them with them
                 continue
             words = b''.join(struct.pack('>III', *x) for x in p.groups.get(fid, []))
             flags = (1 if on else 0) | (2 if needs else 0) | (4 if fid == 'pad' else 0)
@@ -1237,13 +1260,16 @@ def main():
     wl = '--wiilink' in sys.argv
     ap = '--newslogos' in sys.argv or '--aplogo' in sys.argv     # --aplogo: the old name
     am = '--articlemusic' in sys.argv
-    extra = [f for f, on in (('wiilink', wl), ('japan', '--japan' in sys.argv)) if on]
+    sym = next((x[10:] for x in sys.argv if x.startswith('--symbols=')), None)   # --symbols=<Jaxi's HAFE WAD>
+    if '--symbols' in sys.argv:
+        raise SystemExit('--symbols needs Jaxi\'s WAD: --symbols="Forecast Channel (Japanese Symbols, WiiLink) - HAFE.wad"')
+    extra = [f for f, on in (('wiilink', wl), ('japan', '--japan' in sys.argv), ('symbols', sym is not None)) if on]
     if len(a) != 3 or a[0] not in ('dol', 'wad'):
         raise SystemExit(__doc__)
     mode, src, dst = a
     if mode == 'dol':
-        if accu or ap or am:
-            raise SystemExit('--accuweather, --newslogos and --articlemusic need wad mode (they change other contents)')
+        if accu or ap or am or sym:
+            raise SystemExit('--accuweather, --symbols, --newslogos and --articlemusic need wad mode (they change other contents)')
         patched = patch_dol(main_dol(open(src, 'rb').read()), clock, feed, dbg, extra)
         open(dst, 'wb').write(patched)
         return
@@ -1254,11 +1280,24 @@ def main():
     key = detect(main)[0]
     if accu and key != 'forecast':
         raise SystemExit('--accuweather is only for the Forecast Channel')
+    if sym and key != 'forecast':
+        raise SystemExit('--symbols is only for the Forecast Channel')
     if (ap or am) and key != 'news':
         raise SystemExit('--newslogos and --articlemusic are only for the News Channel')
     patched = patch_dol(main, clock, feed, dbg, extra)
     open(app, 'wb').write(patched)
     sys.path.insert(0, HERE)
+    if sym:
+        # contents 0 (banner and icon), 4 and 5 of Jaxi's HAFE WAD (not in the repo: it is Nintendo's and his
+        # work); --accuweather then redoes the logo and credit on top
+        run([SHARPII, 'WAD', '-u', sym, tmp + '/j'])
+        for d in ('u', 'j'):
+            tmd = [f for f in os.listdir(tmp + '/' + d) if f.endswith('.tmd')][0]
+            if open(tmp + '/%s/%s' % (d, tmd), 'rb').read()[0x190:0x194] != b'HAFE':
+                raise SystemExit('--symbols is only for the USA Forecast Channel (HAFE), with its WAD as the value')
+        for n in ('00000000.app', '00000004.app', '00000005.app'):
+            shutil.copy(tmp + '/j/' + n, tmp + '/u/' + n)
+        print('symbols: banner, icon and contents 4, 5 from %s; DOL words in the patch above' % os.path.basename(sym))
     if accu:
         import banner
         bnr = tmp + '/u/00000000.app'

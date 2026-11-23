@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Forecast Channel banner/icon: WeatherNews logo -> AccuWeather logo.
+"""Forecast Channel banner/icon: WeatherNews logo -> AccuWeather logo, credit -> WiiLink.
 
   banner.py <00000000.app in> <00000000.app out>
 
@@ -16,8 +16,8 @@ orange or black through the material's colours (tools/mktpl.py), resized to
 the logo's 7:1 proportions with half a sun height of clear space on the plate.
 The textures are 1:1 with their panes, like the originals, so icon.bin and
 banner.bin stay about as small as WiiLink's.  The banner's
-"supported by weathernews" line becomes "supported by AccuWeather" (same
-length).  Textures: assets/accuweather/ (see tools/mktpl.py).
+"supported by weathernews" line (Jaxi's "powered by WiiLink") becomes
+"supported by WiiLink".  Textures: assets/accuweather/ (see tools/mktpl.py).
 """
 import hashlib
 import os
@@ -35,8 +35,9 @@ EDITS = {
         'layout': 'arc/blyt/banner.brlyt',
         'pane': ('wn_logo', 140.0, 20.0, 80.0),     # centre origin, on the 0-160 white plate
         'mat': 'wn_logo',
-        'text': [('supported by weathernews', 'supported by AccuWeather'),
-                 ('supported by \u30a6\u30a7\u30b6\u30fc\u30cb\u30e5\u30fc\u30b9', 'supported by AccuWeather')],  # Japan
+        'text': [('supported by weathernews', 'supported by WiiLink'),
+                 ('powered by WiiLink', 'supported by WiiLink'),      # Jaxi's HAFE WAD
+                 ('supported by \u30a6\u30a7\u30b6\u30fc\u30cb\u30e5\u30fc\u30b9', 'supported by WiiLink')],  # Japan
     },
     'meta/icon.bin': {
         'tpl': ('arc/timg/icon_logo_wn.tpl', 'icon_logo.tpl'),
@@ -209,8 +210,11 @@ def edit_layout(d, pane, mat, text):
                 old, new = t_old.encode('utf-16-be'), t_new.encode('utf-16-be')
                 if bytes(d[off + so:off + so + len(old) + 2]) != old + b'\0\0':
                     continue
-                if len(new) == len(old):
-                    d[off + so:off + so + len(new)] = new
+                cap, = struct.unpack('>H', d[off + 0x4C:off + 0x4E])     # the pane's buffer, in bytes
+                if len(new) + 2 <= cap and so + cap <= sz:   # fits: zero-pad, set the string's length
+                    n = max(len(old), len(new)) + 2
+                    d[off + so:off + so + n] = new + b'\0' * (n - len(new))
+                    struct.pack_into('>H', d, off + 0x4E, len(new) + 2)
                 else:                       # the string ends the section: rebuild it the new size
                     if sz - (so + len(old) + 2) >= 4:
                         raise SystemExit('layout: text %r is not at the end of its pane' % t_old)
