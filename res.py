@@ -696,6 +696,11 @@ def leaf_for(feats):
         low = path.lower()
         if 'accuweather' in feats and low.endswith('/tplweather.tpl.lz'):
             return accu_credit_tpl(d)
+        if 'wiilink' in feats and low.endswith('news_layout.arc.lz/arc/blyt/error0.brlyt'):
+            # the News Channel's "WiiConnect24 Standby Connection is turned off" screen: WiiLink too
+            out = edit_brlyt(d, lambda t: WC24.sub(lambda w: ' '.join('WiiLink') if w.group(1) else 'WiiLink', t))
+            if out is not None:
+                return out
         if 'articlemusic' in feats and low.endswith('/rev_news.brsar'):
             return news_read_bgm(d)
         changed = news_leaf(path, d) if feats & {'newslogos', 'aplogo'} else None
