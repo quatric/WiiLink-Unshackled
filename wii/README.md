@@ -93,7 +93,7 @@ make            # WiiLinkUnshackled.dol (builds the two libraries first)
 make hbc        # apps/WiiLinkUnshackled/{boot.dol,meta.xml,icon.png}
 ```
 
-Needs devkitPPC, libogc and libwiikeyboard (`DEVKITPRO`, `DEVKITPPC`). libwiiinput and libwiiupdate are git
+Needs devkitPPC, libogc2 and libwiikeyboard (`DEVKITPRO`, `DEVKITPPC`). libwiiinput and libwiiupdate are git
 submodules, pinned to the commits GodModeWii uses. The patches are `data/patches.bin`, linked in with bin2o
 (`patches_bin.h`). To make it again after changing the hooks or the profiles in `build.py`:
 

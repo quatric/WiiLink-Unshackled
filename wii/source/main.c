@@ -31,7 +31,7 @@ static volatile bool quit_now, power_off;
 enum { K_UP = 1, K_DOWN = 2, K_A = 4, K_B = 8, K_HOME = 16, K_LEFT = 32, K_RIGHT = 64 };
 
 static void power_cb(void) { quit_now = power_off = true; }
-static void reset_cb(u32 irq, void *ctx) { (void)irq, (void)ctx, quit_now = true; }
+static void reset_cb(void) { quit_now = true; }
 
 static void video_init(void)
 {
